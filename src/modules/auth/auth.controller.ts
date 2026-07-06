@@ -6,14 +6,25 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { AspiranteLoginDto } from './dto/aspirante-login.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { ActivarCuentaDto } from './dto/activar-cuenta.dto';
+import { FlowStepNavigationResponseDto } from './dto/flow-step-navigation-response.dto';
 import { Public } from './decorators/public.decorator';
+import { AspiranteOnlyGuard } from './guards/aspirante-only.guard';
+import { CurrentUser } from './decorators/current-user.decorator';
+import type { JwtPayloadAspirante } from '../../common/interfaces/jwt-payload.interface';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -83,5 +94,33 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Token inválido, expirado o datos no coinciden' })
   async activarCuenta(@Body() dto: ActivarCuentaDto) {
     return this.authService.activarCuenta(dto);
+  }
+
+  @Post('aspirante/next-step')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AspiranteOnlyGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Avanzar un paso en el flujo (order_id + 1). Si no existe siguiente paso, no actualiza BD ni token (fin de flujo).',
+  })
+  @ApiOkResponse({ type: FlowStepNavigationResponseDto })
+  @ApiResponse({ status: 403, description: 'No es token de aspirante' })
+  async nextFlowStep(@CurrentUser() user: JwtPayloadAspirante) {
+    return this.authService.nextFlowStep(user);
+  }
+
+  @Post('aspirante/previous-step')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AspiranteOnlyGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Retroceder un paso en el flujo (order_id - 1). Si order_id actual es 1, no actualiza (inicio de flujo).',
+  })
+  @ApiOkResponse({ type: FlowStepNavigationResponseDto })
+  @ApiResponse({ status: 403, description: 'No es token de aspirante' })
+  async previousFlowStep(@CurrentUser() user: JwtPayloadAspirante) {
+    return this.authService.previousFlowStep(user);
   }
 }

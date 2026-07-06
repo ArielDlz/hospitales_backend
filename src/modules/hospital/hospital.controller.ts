@@ -1,12 +1,17 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
   ParseIntPipe,
+  Post,
   NotFoundException,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -14,14 +19,34 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { HospitalService } from './hospital.service';
+import { CreateHospitalDto } from './dto/create-hospital.dto';
 import { HospitalResponseDto } from './dto/hospital-response.dto';
 import { TenantBySlugResponseDto } from './dto/tenant-by-slug.dto';
 import { Public } from '../auth/decorators/public.decorator';
+import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 
 @ApiTags('hospitales')
 @Controller('hospitales')
 export class HospitalController {
   constructor(private readonly hospitalService: HospitalService) {}
+
+  @Post()
+  @UseGuards(AdminOnlyGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Crear hospital (solo rol administrador). id, uuid, created_at y active los gestiona la BD.',
+  })
+  @ApiCreatedResponse({ description: 'Hospital creado', type: HospitalResponseDto })
+  @ApiResponse({ status: 403, description: 'No es administrador o token inválido' })
+  @ApiResponse({ status: 409, description: 'Slug ya existente' })
+  async create(
+    @Body() dto: CreateHospitalDto,
+    @CurrentUser() user: JwtPayloadAdmin,
+  ): Promise<HospitalResponseDto> {
+    return this.hospitalService.create(dto, user);
+  }
 
   @Public()
   @Get()

@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
@@ -31,7 +32,7 @@ function isOriginAllowed(origin: string, patterns: string[]): boolean {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -61,6 +62,7 @@ async function bootstrap() {
     .addTag('hospitales')
     .addTag('aspirantes')
     .addTag('auth')
+    .addTag('pruebas')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       'JWT-auth',

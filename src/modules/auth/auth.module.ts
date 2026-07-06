@@ -13,6 +13,7 @@ import { TenantScopeGuard } from './guards/tenant-scope.guard';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Aspirante } from '../aspirante/aspirante.entity';
+import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { Hospital } from '../hospital/hospital.entity';
 
 @Module({
@@ -21,6 +22,7 @@ import { Hospital } from '../hospital/hospital.entity';
       UsuarioAdministrativo,
       EvaluadorTenant,
       Aspirante,
+      EvaluationFlowStep,
       Hospital,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),

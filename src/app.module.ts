@@ -11,6 +11,8 @@ import { AspiranteModule } from './modules/aspirante/aspirante.module';
 import { UsuarioAdministrativoModule } from './modules/usuario-administrativo/usuario-administrativo.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { MailModule } from './modules/mail/mail.module';
+import { PruebasModule } from './modules/pruebas/pruebas.module';
+import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
 
 @Module({
   imports: [
@@ -25,13 +27,18 @@ import { MailModule } from './modules/mail/mail.module';
         CORS_ORIGINS: Joi.string().allow('').default(''),
         JWT_SECRET: Joi.string().min(32).required(),
         JWT_EXPIRES_IN: Joi.string().default('7d'),
-        SMTP_HOST: Joi.string().allow('').default(''),
-        SMTP_PORT: Joi.number().default(587),
-        SMTP_USER: Joi.string().allow('').default(''),
-        SMTP_PASS: Joi.string().allow('').default(''),
-        MAIL_FROM: Joi.string().allow('').default(''),
+        BREVO_API_KEY: Joi.string().allow('').default(''),
+        MAIL_FROM: Joi.string().email().allow('').default('registro@arieldelao.dev'),
+        MAIL_FROM_NAME: Joi.string().allow('').default('Registro'),
+        ADMIN_NOTIFY_EMAIL: Joi.string().email().allow('').default(''),
         PRIMER_ACCESO_DOMAIN: Joi.string().allow('').default(''),
         PRIMER_ACCESO_PLACEHOLDER: Joi.string().allow('').default('pendiente'),
+        ADMIN_LOGIN_DOMAIN: Joi.string().allow('').default('admin.arieldelao.dev'),
+        AWS_REGION: Joi.string().default('us-east-2'),
+        AWS_ACCESS_KEY_ID: Joi.string().allow('').default(''),
+        AWS_SECRET_ACCESS_KEY: Joi.string().allow('').default(''),
+        S3_BUCKET: Joi.string().required(),
+        S3_PUBLIC_BASE_URL: Joi.string().uri().required(),
       }),
     }),
     TypeOrmModule.forRootAsync({
@@ -53,6 +60,8 @@ import { MailModule } from './modules/mail/mail.module';
     UsuarioAdministrativoModule,
     AuthModule,
     MailModule,
+    PruebasModule,
+    EvaluacionesModule,
   ],
   controllers: [AppController],
   providers: [

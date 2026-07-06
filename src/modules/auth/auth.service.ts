@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Aspirante } from '../aspirante/aspirante.entity';
+import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Hospital } from '../hospital/hospital.entity';
@@ -47,6 +49,8 @@ export class AuthService {
     private readonly evaluadorTenantRepository: Repository<EvaluadorTenant>,
     @InjectRepository(Aspirante)
     private readonly aspiranteRepository: Repository<Aspirante>,
+    @InjectRepository(EvaluationFlowStep)
+    private readonly evaluationFlowStepRepository: Repository<EvaluationFlowStep>,
     @InjectRepository(Hospital)
     private readonly hospitalRepository: Repository<Hospital>,
   ) {}
@@ -54,7 +58,7 @@ export class AuthService {
   async loginAdmin(dto: AdminLoginDto): Promise<{ accessToken: string; expiresIn: string }> {
     const usuario = await this.usuarioRepository.findOne({
       where: { email: dto.email.toLowerCase(), active: true },
-      select: ['id', 'email', 'passwordHash', 'rol', 'isSuperuser'],
+      select: ['id', 'email', 'passwordHash', 'rol', 'isSuperuser', 'firma'],
     });
 
     const passwordToCheck = usuario?.passwordHash ?? DUMMY_HASH;
@@ -79,6 +83,7 @@ export class AuthService {
       type: 'admin',
       rol: usuario.rol,
       tenants,
+      signature: usuario.firma != null && usuario.firma !== '',
     };
 
     const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN', '7d');
@@ -107,7 +112,7 @@ export class AuthService {
         registroHospital: dto.registroHospital,
         active: true,
       },
-      select: ['id', 'tenantId', 'email', 'registroHospital', 'passwordHash', 'nombre', 'apellidos'],
+      relations: ['evaluationFlowStep'],
     });
 
     const passwordToCheck = aspirante?.passwordHash ?? DUMMY_HASH;
@@ -117,19 +122,44 @@ export class AuthService {
       throw new UnauthorizedException(CREDENTIALS_ERROR);
     }
 
-    const fullName = `${aspirante.nombre} ${aspirante.apellidos}`.trim();
-    const payload: JwtPayloadAspirante = {
-      sub: aspirante.id,
-      type: 'aspirante',
-      tenantId: aspirante.tenantId,
-      slug: hospital.slug,
-      registro: aspirante.registroHospital,
-      nombre: fullName,
-    };
+    if (!aspirante.evaluationFlowStep) {
+      throw new InternalServerErrorException(
+        'Aspirante sin paso de flujo asignado; ejecute las migraciones del catálogo evaluation_flow_steps',
+      );
+    }
 
+    return this.issueAspiranteAccessToken({
+      aspirante,
+      hospitalSlug: hospital.slug,
+      flowStep: aspirante.evaluationFlowStep,
+    });
+  }
+
+  /**
+   * Firma un JWT de aspirante con order_id y descripción del paso actual.
+   * Reutilizar tras login, activar cuenta, avanzar/retroceder paso, etc.
+   */
+  issueAspiranteAccessToken(params: {
+    aspirante: Pick<
+      Aspirante,
+      'id' | 'tenantId' | 'registroHospital' | 'nombre' | 'apellidos'
+    >;
+    hospitalSlug: string;
+    flowStep: Pick<EvaluationFlowStep, 'orderId' | 'descripcion'>;
+  }): { accessToken: string; expiresIn: string } {
+    const fullName = `${params.aspirante.nombre} ${params.aspirante.apellidos}`.trim();
+    const payload: JwtPayloadAspirante = {
+      sub: params.aspirante.id,
+      type: 'aspirante',
+      tenantId: params.aspirante.tenantId,
+      slug: params.hospitalSlug,
+      registro: params.aspirante.registroHospital,
+      nombre: fullName,
+      evaluationFlowOrderId: params.flowStep.orderId,
+      evaluationFlowDescripcion: params.flowStep.descripcion,
+    };
     const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN', '7d');
     const accessToken = this.jwtService.sign(payload);
-
     return { accessToken, expiresIn };
   }
 
@@ -234,29 +264,141 @@ export class AuthService {
     }
 
     this.logger.log(`[activarCuenta] Validación OK - activando aspirante=${aspirante.id}`);
+
+    const pasoRegistrado = await this.evaluationFlowStepRepository.findOne({
+      where: { orderId: 2 },
+    });
+    if (!pasoRegistrado) {
+      this.logger.error('[activarCuenta] Falta paso evaluation_flow_steps con order_id = 2');
+      throw new InternalServerErrorException(
+        'Catálogo evaluation_flow_steps no inicializado (falta paso order_id = 2)',
+      );
+    }
+
     aspirante.passwordHash = await bcrypt.hash(dto.password, 10);
     aspirante.active = true;
     aspirante.primerAccesoToken = null;
     aspirante.primerAccesoExpira = null;
+    aspirante.evaluationFlowId = pasoRegistrado.id;
     await this.aspiranteRepository.save(aspirante);
 
     this.logger.log(`[activarCuenta] Cuenta activada - aspirante=${aspirante.id} hospital=${hospital.nombre}`);
-    const fullName = `${aspirante.nombre} ${aspirante.apellidos}`.trim();
-    const payload: JwtPayloadAspirante = {
-      sub: aspirante.id,
-      type: 'aspirante',
-      tenantId: aspirante.tenantId,
-      slug: hospital.slug,
-      registro: aspirante.registroHospital,
-      nombre: fullName,
-    };
-    const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN', '7d');
-    const accessToken = this.jwtService.sign(payload);
+
+    const tokenBundle = this.issueAspiranteAccessToken({
+      aspirante,
+      hospitalSlug: hospital.slug,
+      flowStep: pasoRegistrado,
+    });
 
     return {
       mensaje: 'Cuenta activada correctamente',
-      accessToken,
-      expiresIn,
+      ...tokenBundle,
+    };
+  }
+
+  async nextFlowStep(
+    user: JwtPayloadAspirante,
+  ): Promise<
+    | { flowUpdated: true; accessToken: string; expiresIn: string }
+    | { flowUpdated: false; reason: 'END_OF_FLOW' }
+  > {
+    const aspirante = await this.aspiranteRepository.findOne({
+      where: { id: user.sub },
+      relations: ['evaluationFlowStep'],
+    });
+    if (!aspirante?.evaluationFlowStep) {
+      throw new BadRequestException('Aspirante o paso de flujo no encontrado');
+    }
+
+    const nextOrderId = aspirante.evaluationFlowStep.orderId + 1;
+    const nextStep = await this.evaluationFlowStepRepository.findOne({
+      where: { orderId: nextOrderId },
+    });
+    if (!nextStep) {
+      return { flowUpdated: false, reason: 'END_OF_FLOW' };
+    }
+
+    const updateResult = await this.aspiranteRepository.update(
+      { id: aspirante.id },
+      { evaluationFlowId: nextStep.id },
+    );
+    if (!updateResult.affected) {
+      throw new InternalServerErrorException(
+        'No se pudo actualizar el paso de flujo del aspirante',
+      );
+    }
+
+    const hospital = await this.hospitalRepository.findOne({
+      where: { uuid: aspirante.tenantId, active: true },
+      select: ['slug'],
+    });
+    if (!hospital) {
+      throw new InternalServerErrorException('Hospital no encontrado');
+    }
+
+    return {
+      flowUpdated: true,
+      ...this.issueAspiranteAccessToken({
+        aspirante,
+        hospitalSlug: hospital.slug,
+        flowStep: nextStep,
+      }),
+    };
+  }
+
+  async previousFlowStep(
+    user: JwtPayloadAspirante,
+  ): Promise<
+    | { flowUpdated: true; accessToken: string; expiresIn: string }
+    | { flowUpdated: false; reason: 'AT_BEGINNING' }
+  > {
+    const aspirante = await this.aspiranteRepository.findOne({
+      where: { id: user.sub },
+      relations: ['evaluationFlowStep'],
+    });
+    if (!aspirante?.evaluationFlowStep) {
+      throw new BadRequestException('Aspirante o paso de flujo no encontrado');
+    }
+
+    const prevOrderId = aspirante.evaluationFlowStep.orderId - 1;
+    if (prevOrderId < 1) {
+      return { flowUpdated: false, reason: 'AT_BEGINNING' };
+    }
+
+    const prevStep = await this.evaluationFlowStepRepository.findOne({
+      where: { orderId: prevOrderId },
+    });
+    if (!prevStep) {
+      throw new BadRequestException(
+        'No existe un paso configurado para el orden anterior en el catálogo',
+      );
+    }
+
+    const updateResult = await this.aspiranteRepository.update(
+      { id: aspirante.id },
+      { evaluationFlowId: prevStep.id },
+    );
+    if (!updateResult.affected) {
+      throw new InternalServerErrorException(
+        'No se pudo actualizar el paso de flujo del aspirante',
+      );
+    }
+
+    const hospital = await this.hospitalRepository.findOne({
+      where: { uuid: aspirante.tenantId, active: true },
+      select: ['slug'],
+    });
+    if (!hospital) {
+      throw new InternalServerErrorException('Hospital no encontrado');
+    }
+
+    return {
+      flowUpdated: true,
+      ...this.issueAspiranteAccessToken({
+        aspirante,
+        hospitalSlug: hospital.slug,
+        flowStep: prevStep,
+      }),
     };
   }
 }

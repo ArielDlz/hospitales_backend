@@ -1,31 +1,49 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
 import { Aspirante } from '../aspirante/aspirante.entity';
 import { Hospital } from '../hospital/hospital.entity';
+import { BrevoClient } from './brevo.client';
+import { buildPrimerAccesoEmail } from './templates/primer-acceso.template';
+import { buildEvaluadorRegistroEmail } from './templates/evaluador-registro.template';
+
+export interface MailFailureAlertContext {
+  aspiranteId: string;
+  aspiranteEmail: string;
+  hospitalNombre: string;
+  errorMessage: string;
+}
+
+export interface EvaluadorMailFailureAlertContext {
+  evaluadorId: string;
+  evaluadorEmail: string;
+  errorMessage: string;
+}
+
+export interface SendEvaluadorRegistroEmailParams {
+  email: string;
+  nombre: string;
+  password: string;
+}
 
 @Injectable()
 export class MailService {
-  private transporter: Transporter | null = null;
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly brevoClient: BrevoClient,
+  ) {}
 
-  constructor(private readonly configService: ConfigService) {
-    this.initTransport();
+  private getSender(): { email: string; name: string } {
+    const email = this.configService.get<string>(
+      'MAIL_FROM',
+      'registro@arieldelao.dev',
+    );
+    const name = this.configService.get<string>('MAIL_FROM_NAME', 'Registro');
+    return { email, name };
   }
 
-  private initTransport(): void {
-    const host = this.configService.get<string>('SMTP_HOST');
-    const port = this.configService.get<number>('SMTP_PORT', 587);
-    const user = this.configService.get<string>('SMTP_USER');
-    const pass = this.configService.get<string>('SMTP_PASS');
-
-    if (host && user && pass) {
-      this.transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: { user, pass },
-      });
+  private assertBrevoConfigured(): void {
+    if (!this.brevoClient.isEnabled()) {
+      throw new Error('Brevo no configurado (BREVO_API_KEY requerida)');
     }
   }
 
@@ -34,39 +52,119 @@ export class MailService {
     token: string,
     hospital: Hospital,
   ): Promise<void> {
-    if (!this.transporter) {
-      throw new Error('Mail transport not configured (SMTP_HOST, SMTP_USER, SMTP_PASS required)');
-    }
+    this.assertBrevoConfigured();
 
     const domain = this.configService.get<string>('PRIMER_ACCESO_DOMAIN');
     if (!domain) {
       throw new Error('PRIMER_ACCESO_DOMAIN is required for primer acceso links');
     }
 
-    const url = `https://${hospital.slug}.${domain}/confirmar-acceso?token=${token}`;
-    const from = this.configService.get<string>('MAIL_FROM', 'noreply@example.com');
+    const activacionUrl = `https://${hospital.slug}.${domain}/confirmar-acceso?token=${token}`;
+    const { subject, html, text } = buildPrimerAccesoEmail({
+      nombre: aspirante.nombre,
+      apellidos: aspirante.apellidos,
+      telefono: aspirante.telefono,
+      registroHospital: aspirante.registroHospital,
+      activacionUrl,
+    });
 
-    const subject = `Activa tu cuenta - ${hospital.nombre}`;
-    const body = `
-Hola,
-
-Te han registrado como aspirante en ${hospital.nombre}.
-
-Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:
-
-${url}
-
-Este enlace caduca en 7 días.
-
-Si no has solicitado este registro, puedes ignorar este correo.
-`;
-
-    await this.transporter.sendMail({
-      from,
-      to: aspirante.email,
+    const sender = this.getSender();
+    await this.brevoClient.sendTransactional({
+      sender,
+      to: [{ email: aspirante.email }],
       subject,
-      text: body.trim(),
-      html: body.trim().replace(/\n/g, '<br>'),
+      htmlContent: html,
+      textContent: text,
+    });
+  }
+
+  async sendEvaluadorRegistroEmail(
+    params: SendEvaluadorRegistroEmailParams,
+  ): Promise<void> {
+    this.assertBrevoConfigured();
+
+    const domain = this.configService.get<string>(
+      'ADMIN_LOGIN_DOMAIN',
+      'admin.arieldelao.dev',
+    );
+    const loginUrl = domain.startsWith('http') ? domain : `https://${domain}`;
+
+    const { subject, html, text } = buildEvaluadorRegistroEmail({
+      nombre: params.nombre,
+      password: params.password,
+      loginUrl,
+    });
+
+    const sender = this.getSender();
+    await this.brevoClient.sendTransactional({
+      sender,
+      to: [{ email: params.email }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    });
+  }
+
+  async sendEvaluadorMailFailureAlert(
+    context: EvaluadorMailFailureAlertContext,
+  ): Promise<void> {
+    const adminEmail = this.configService.get<string>('ADMIN_NOTIFY_EMAIL', '');
+    if (!adminEmail || !this.brevoClient.isEnabled()) {
+      return;
+    }
+
+    const sender = this.getSender();
+    const subject = '[Alerta] Fallo envío correo registro evaluador';
+    const text = [
+      'No se pudo enviar el correo de bienvenida a un evaluador recién creado.',
+      '',
+      `Evaluador ID: ${context.evaluadorId}`,
+      `Email evaluador: ${context.evaluadorEmail}`,
+      `Error: ${context.errorMessage}`,
+      '',
+      'El evaluador quedó registrado en el sistema. Revisa la configuración de Brevo o reenvía las credenciales manualmente.',
+    ].join('\n');
+
+    const html = text.replace(/\n/g, '<br>');
+
+    await this.brevoClient.sendTransactional({
+      sender,
+      to: [{ email: adminEmail }],
+      subject,
+      htmlContent: `<p style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;">${html}</p>`,
+      textContent: text,
+    });
+  }
+
+  async sendAdminMailFailureAlert(
+    context: MailFailureAlertContext,
+  ): Promise<void> {
+    const adminEmail = this.configService.get<string>('ADMIN_NOTIFY_EMAIL', '');
+    if (!adminEmail || !this.brevoClient.isEnabled()) {
+      return;
+    }
+
+    const sender = this.getSender();
+    const subject = `[Alerta] Fallo envío correo primer acceso - ${context.hospitalNombre}`;
+    const text = [
+      'No se pudo enviar el correo de activación a un aspirante recién creado.',
+      '',
+      `Hospital: ${context.hospitalNombre}`,
+      `Aspirante ID: ${context.aspiranteId}`,
+      `Email aspirante: ${context.aspiranteEmail}`,
+      `Error: ${context.errorMessage}`,
+      '',
+      'El aspirante quedó registrado en el sistema. Revisa la configuración de Brevo o reenvía la invitación manualmente.',
+    ].join('\n');
+
+    const html = text.replace(/\n/g, '<br>');
+
+    await this.brevoClient.sendTransactional({
+      sender,
+      to: [{ email: adminEmail }],
+      subject,
+      htmlContent: `<p style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;">${html}</p>`,
+      textContent: text,
     });
   }
 }

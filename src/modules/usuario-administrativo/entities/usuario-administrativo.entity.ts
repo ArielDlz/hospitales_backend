@@ -39,6 +39,12 @@ export class UsuarioAdministrativo {
   @Column({ type: 'boolean', default: true })
   active: boolean;
 
+  @Column({ type: 'text', nullable: true, default: null })
+  nombre: string | null;
+
+  @Column({ type: 'text', nullable: true, default: null })
+  firma: string | null;
+
   @OneToMany(() => EvaluadorTenant, (et) => et.usuario)
   tenantAssignments: EvaluadorTenant[];
 }

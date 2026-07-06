@@ -5,6 +5,8 @@ export interface JwtPayloadAdmin {
   type: 'admin';
   rol: RolUsuarioAdmin;
   tenants?: string[];
+  /** true si el usuario tiene firma (URL no vacía) en la base de datos */
+  signature: boolean;
   iat?: number;
   exp?: number;
 }
@@ -17,6 +19,10 @@ export interface JwtPayloadAspirante {
   registro: string;
   /** Nombre completo del aspirante (para mostrar en el frontend) */
   nombre: string;
+  /** order_id del paso actual en evaluation_flow_steps */
+  evaluationFlowOrderId?: number;
+  /** descripcion del paso actual (texto para UI) */
+  evaluationFlowDescripcion?: string;
   iat?: number;
   exp?: number;
 }

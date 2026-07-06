@@ -1,7 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Hospital } from './hospital.entity';
+import { CreateHospitalDto } from './dto/create-hospital.dto';
+import { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
+import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 
 @Injectable()
 export class HospitalService {
@@ -31,6 +38,31 @@ export class HospitalService {
     const where: { slug: string; active?: boolean } = { slug };
     if (!includeInactive) where.active = true;
     return this.hospitalRepository.findOne({ where });
+  }
+
+  async create(dto: CreateHospitalDto, user: JwtPayloadAdmin): Promise<Hospital> {
+    if (user.rol !== RolUsuarioAdmin.Administrador) {
+      throw new ForbiddenException('Solo los administradores pueden crear hospitales');
+    }
+
+    const slug = dto.slug.trim().toLowerCase();
+    const existing = await this.findBySlug(slug, true);
+    if (existing) {
+      throw new ConflictException('Ya existe un hospital con este slug');
+    }
+
+    const entity = this.hospitalRepository.create({
+      nombre: dto.nombre.trim(),
+      logoUrl: dto.logoUrl?.trim() ?? null,
+      slug,
+    });
+
+    const saved = await this.hospitalRepository.save(entity);
+    if (!saved.uuid) {
+      const reloaded = await this.findOne(saved.id, true);
+      return reloaded!;
+    }
+    return saved;
   }
 
   async findTenantBySlug(slug: string, includeInactive = false) {
