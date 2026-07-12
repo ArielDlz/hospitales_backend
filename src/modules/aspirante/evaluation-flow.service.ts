@@ -123,7 +123,7 @@ export class EvaluationFlowService {
     return { advanced: true, newOrderId: targetOrderId };
   }
 
-  async tryAdvanceFromStep3(
+  async tryAdvanceFromStep4(
     aspiranteId: string,
     idPruebaAspirante: number,
   ): Promise<FlowAdvanceResult> {
@@ -133,10 +133,10 @@ export class EvaluationFlowService {
     if (respuestaCount !== 1) {
       return { advanced: false };
     }
-    return this.advanceOneStepIfAt(aspiranteId, 3);
+    return this.advanceOneStepIfAt(aspiranteId, 4);
   }
 
-  async tryAdvanceFromStep4(
+  async tryAdvanceFromStep5(
     aspiranteId: string,
     tenantId: string,
   ): Promise<FlowAdvanceResult> {
@@ -179,6 +179,6 @@ export class EvaluationFlowService {
       return { advanced: false };
     }
 
-    return this.advanceOneStepIfAt(aspiranteId, 4);
+    return this.advanceOneStepIfAt(aspiranteId, 5);
   }
 }

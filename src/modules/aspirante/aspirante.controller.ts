@@ -1,9 +1,22 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiQuery,
   ApiResponse,
   ApiTags,
@@ -13,6 +26,7 @@ import { AspiranteResponseDto } from './dto/aspirante-response.dto';
 import { CreateAspiranteDto } from './dto/create-aspirante.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
+import { SuperuserGuard } from '../auth/guards/superuser.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 
@@ -80,5 +94,23 @@ export class AspiranteController {
     @CurrentUser() user: JwtPayloadAdmin,
   ) {
     return this.aspiranteService.create(dto, user);
+  }
+
+  @Delete(':id')
+  @UseGuards(SuperuserGuard)
+  @HttpCode(204)
+  @ApiOperation({
+    summary:
+      'Eliminar aspirante (borrado definitivo). Anonimiza pagos y elimina el resto. Solo superusuario.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del aspirante' })
+  @ApiNoContentResponse({ description: 'Aspirante eliminado y pagos anonimizados' })
+  @ApiResponse({ status: 403, description: 'Requiere superusuario' })
+  @ApiResponse({ status: 404, description: 'Aspirante no encontrado' })
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayloadAdmin,
+  ): Promise<void> {
+    await this.aspiranteService.remove(id, user);
   }
 }

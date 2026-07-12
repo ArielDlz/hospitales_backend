@@ -10,7 +10,7 @@ export class PruebaRespuestaGuardadaDto {
   @ApiProperty({
     example: 'texto_libre',
     description:
-      'Tipo de pregunta (texto_libre, opcion_unica, opcion_multiple, archivo, cargar_archivo)',
+      'Tipo de pregunta (texto_libre, texto_corto, opcion_unica, opcion_multiple, archivo, cargar_archivo)',
   })
   tipo: string;
 

@@ -233,33 +233,8 @@ export class AuthService {
       throw new BadRequestException(ACTIVACION_ERROR);
     }
 
-    const normalizeStr = (s: string) => s.trim().toLowerCase();
-    const normalizeTel = (s: string) => s.replace(/\D/g, '');
-
-    const nombreOk = normalizeStr(aspirante.nombre) === normalizeStr(dto.nombre);
-    const apellidosOk =
-      normalizeStr(aspirante.apellidos) === normalizeStr(dto.apellidos);
-    const registroOk =
-      aspirante.registroHospital.trim() === dto.registroHospital.trim();
-
-    if (aspirante.telefono === null) {
-      if (dto.telefono?.trim()) {
-        this.logger.warn(`[activarCuenta] Rechazado: aspirante sin teléfono en BD pero envió uno`);
-        throw new BadRequestException(ACTIVACION_ERROR);
-      }
-    } else {
-      if (!dto.telefono?.trim()) {
-        this.logger.warn(`[activarCuenta] Rechazado: aspirante tiene teléfono en BD pero no envió`);
-        throw new BadRequestException(ACTIVACION_ERROR);
-      }
-      if (normalizeTel(aspirante.telefono) !== normalizeTel(dto.telefono)) {
-        this.logger.warn(`[activarCuenta] Rechazado: teléfono no coincide`);
-        throw new BadRequestException(ACTIVACION_ERROR);
-      }
-    }
-
-    if (!nombreOk || !apellidosOk || !registroOk) {
-      this.logger.warn(`[activarCuenta] Rechazado: nombre/apellidos/registro no coinciden (nombreOk=${nombreOk} apellidosOk=${apellidosOk} registroOk=${registroOk})`);
+    if (aspirante.registroHospital.trim() !== dto.registroHospital.trim()) {
+      this.logger.warn(`[activarCuenta] Rechazado: registroHospital no coincide`);
       throw new BadRequestException(ACTIVACION_ERROR);
     }
 
@@ -276,6 +251,8 @@ export class AuthService {
     }
 
     aspirante.passwordHash = await bcrypt.hash(dto.password, 10);
+    aspirante.genero = dto.genero;
+    aspirante.fechaNacimiento = dto.fechaNacimiento;
     aspirante.active = true;
     aspirante.primerAccesoToken = null;
     aspirante.primerAccesoExpira = null;
@@ -308,6 +285,10 @@ export class AuthService {
     });
     if (!aspirante?.evaluationFlowStep) {
       throw new BadRequestException('Aspirante o paso de flujo no encontrado');
+    }
+
+    if (aspirante.evaluationFlowStep.orderId === 2) {
+      throw new BadRequestException('Debes completar el pago antes de continuar');
     }
 
     const nextOrderId = aspirante.evaluationFlowStep.orderId + 1;

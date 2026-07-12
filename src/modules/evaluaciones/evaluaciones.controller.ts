@@ -30,6 +30,7 @@ import {
   ConfirmarEvaluacionResponseDto,
 } from './dto/aspirante-evaluacion-response.dto';
 import { FirmarInformeResponseDto } from './dto/firmar-informe-response.dto';
+import { AsignarEvaluacionResponseDto } from './dto/asignar-evaluacion-response.dto';
 import { buildContentDispositionAttachment } from './informe-firmado-filename.util';
 
 @ApiTags('evaluaciones')
@@ -46,6 +47,24 @@ export class EvaluacionesController {
   @ApiOkResponse({ type: [VeredictoResponseDto] })
   async findVeredictos() {
     return this.evaluacionesService.findVeredictos();
+  }
+
+  @Post('aspirantes/:aspiranteId/asignar')
+  @ApiOperation({
+    summary:
+      'Reservar evaluación: asigna evaluador y avanza paso 5→6 sin cargar el workspace',
+  })
+  @ApiCreatedResponse({ type: AsignarEvaluacionResponseDto })
+  @ApiResponse({ status: 403, description: 'Evaluador sin acceso al hospital' })
+  @ApiResponse({
+    status: 400,
+    description: 'Aspirante no está en paso 5 o 6',
+  })
+  async asignarEvaluacion(
+    @Param('aspiranteId', ParseUUIDPipe) aspiranteId: string,
+    @CurrentUser() user: JwtPayloadAdmin,
+  ): Promise<AsignarEvaluacionResponseDto> {
+    return this.evaluacionesService.asignarEvaluacion(aspiranteId, user);
   }
 
   @Get('aspirantes/:aspiranteId')

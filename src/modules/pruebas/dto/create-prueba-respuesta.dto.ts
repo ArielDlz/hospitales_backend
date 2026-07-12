@@ -15,7 +15,7 @@ export class CreatePruebaRespuestaDto {
   @ApiProperty({
     example: 'texto_libre',
     description:
-      'Tipo de pregunta enviado por frontend (texto_libre, opcion_unica, opcion_multiple, archivo, cargar_archivo)',
+      'Tipo de pregunta enviado por frontend (texto_libre, texto_corto, opcion_unica, opcion_multiple, archivo, cargar_archivo)',
   })
   @IsString()
   tipo: string;

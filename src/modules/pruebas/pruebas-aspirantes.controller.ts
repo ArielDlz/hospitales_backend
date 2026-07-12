@@ -125,6 +125,8 @@ export class PruebasAspirantesController {
       );
     }
 
+    await this.pruebasService.assertAspiranteCanAccessPruebas(user.sub);
+
     const filename = buildSafeFilename(file.originalname);
     const key = `uploads/${user.sub}/${filename}`;
     const uploaded = await this.s3Storage.uploadBuffer({
