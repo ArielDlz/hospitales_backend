@@ -156,32 +156,32 @@ describe('EvaluationFlowService', () => {
     });
   });
 
-  describe('tryAdvanceFromStep3', () => {
+  describe('tryAdvanceFromStep4', () => {
     it('no avanza si no es la primera respuesta del intento', async () => {
       respuestaRepo.count.mockResolvedValue(2);
 
-      const result = await service.tryAdvanceFromStep3(aspiranteId, 10);
+      const result = await service.tryAdvanceFromStep4(aspiranteId, 10);
 
       expect(result).toEqual({ advanced: false });
       expect(aspiranteRepo.findOne).not.toHaveBeenCalled();
     });
 
-    it('avanza 3→4 en la primera respuesta del intento', async () => {
+    it('avanza 4→5 en la primera respuesta del intento', async () => {
       respuestaRepo.count.mockResolvedValue(1);
       aspiranteRepo.findOne.mockResolvedValue({
         id: aspiranteId,
-        evaluationFlowStep: { orderId: 3, id: 30 },
+        evaluationFlowStep: { orderId: 4, id: 40 },
       });
-      flowStepRepo.findOne.mockResolvedValue({ orderId: 4, id: 40 });
+      flowStepRepo.findOne.mockResolvedValue({ orderId: 5, id: 50 });
       aspiranteRepo.update.mockResolvedValue({ affected: 1 });
 
-      const result = await service.tryAdvanceFromStep3(aspiranteId, 10);
+      const result = await service.tryAdvanceFromStep4(aspiranteId, 10);
 
-      expect(result).toEqual({ advanced: true, newOrderId: 4 });
+      expect(result).toEqual({ advanced: true, newOrderId: 5 });
     });
   });
 
-  describe('tryAdvanceFromStep4', () => {
+  describe('tryAdvanceFromStep5', () => {
     beforeEach(() => {
       pruebaHospitalRepo.find.mockResolvedValue([{ idPrueba: 1 }, { idPrueba: 2 }]);
       pruebaRepo.find.mockResolvedValue([
@@ -195,7 +195,7 @@ describe('EvaluationFlowService', () => {
         { idPrueba: 1, status: ProcesoPrueba.PorEvaluar },
       ]);
 
-      const result = await service.tryAdvanceFromStep4(aspiranteId, tenantId);
+      const result = await service.tryAdvanceFromStep5(aspiranteId, tenantId);
 
       expect(result).toEqual({ advanced: false });
       expect(aspiranteRepo.update).not.toHaveBeenCalled();
@@ -207,7 +207,7 @@ describe('EvaluationFlowService', () => {
         { idPrueba: 2, status: ProcesoPrueba.Iniciada },
       ]);
 
-      const result = await service.tryAdvanceFromStep4(aspiranteId, tenantId);
+      const result = await service.tryAdvanceFromStep5(aspiranteId, tenantId);
 
       expect(result).toEqual({ advanced: false });
     });
@@ -215,26 +215,26 @@ describe('EvaluationFlowService', () => {
     it('no avanza si no hay pruebas habilitadas', async () => {
       pruebaHospitalRepo.find.mockResolvedValue([]);
 
-      const result = await service.tryAdvanceFromStep4(aspiranteId, tenantId);
+      const result = await service.tryAdvanceFromStep5(aspiranteId, tenantId);
 
       expect(result).toEqual({ advanced: false });
     });
 
-    it('avanza 4→5 cuando todas las pruebas habilitadas están por_evaluar o posterior', async () => {
+    it('avanza 5→6 cuando todas las pruebas habilitadas están por_evaluar o posterior', async () => {
       pruebaAspiranteRepo.find.mockResolvedValue([
         { idPrueba: 1, status: ProcesoPrueba.PorEvaluar },
         { idPrueba: 2, status: ProcesoPrueba.PorEvaluar },
       ]);
       aspiranteRepo.findOne.mockResolvedValue({
         id: aspiranteId,
-        evaluationFlowStep: { orderId: 4, id: 40 },
+        evaluationFlowStep: { orderId: 5, id: 50 },
       });
-      flowStepRepo.findOne.mockResolvedValue({ orderId: 5, id: 50 });
+      flowStepRepo.findOne.mockResolvedValue({ orderId: 6, id: 60 });
       aspiranteRepo.update.mockResolvedValue({ affected: 1 });
 
-      const result = await service.tryAdvanceFromStep4(aspiranteId, tenantId);
+      const result = await service.tryAdvanceFromStep5(aspiranteId, tenantId);
 
-      expect(result).toEqual({ advanced: true, newOrderId: 5 });
+      expect(result).toEqual({ advanced: true, newOrderId: 6 });
     });
   });
 });

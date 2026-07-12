@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as express from 'express';
 import { AppModule } from './app.module';
 
 function parseCorsOrigins(value: string): string[] {
@@ -33,6 +34,18 @@ function isOriginAllowed(origin: string, patterns: string[]): boolean {
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.use(
+    '/webhooks/stripe',
+    express.raw({ type: 'application/json' }),
+    (
+      req: express.Request & { rawBody?: Buffer },
+      _res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      req.rawBody = req.body as Buffer;
+      next();
+    },
+  );
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -63,6 +76,7 @@ async function bootstrap() {
     .addTag('aspirantes')
     .addTag('auth')
     .addTag('pruebas')
+    .addTag('payments')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       'JWT-auth',

@@ -51,6 +51,12 @@ cp .env.example .env
 | `ADMIN_NOTIFY_EMAIL` | Email para alertas si falla el envío al aspirante | No |
 | `PRIMER_ACCESO_DOMAIN` | Dominio base de enlaces de activación (ej: `arieldelao.dev`) | Sí (para invitaciones) |
 | `PRIMER_ACCESO_PLACEHOLDER` | Contraseña temporal hasta activación | No |
+| `STRIPE_SECRET_KEY` | Clave secreta de Stripe (`sk_test_...` / `sk_live_...`) | Sí (para pagos) |
+| `STRIPE_PUBLISHABLE_KEY` | Clave publicable de Stripe (`pk_test_...`) | Sí (para Payment Element) |
+| `STRIPE_WEBHOOK_SECRET` | Secreto de firma de webhooks (`whsec_...`) | Sí (para pagos) |
+| `STRIPE_PRICE_ID` | ID del Price en Stripe (`price_...`); define monto, moneda y producto | Sí (para pagos) |
+
+La URL de retorno tras pago se construye como `https://{slug}.{PRIMER_ACCESO_DOMAIN}/pago/exito` y se devuelve en `POST /payments/intent`.
 
 ### Correo con Brevo
 
@@ -76,6 +82,9 @@ psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/006_pruebas_
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/007_pruebas_instrucciones_markdown.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/008_pruebas_tracking.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/009_evaluation_flow_steps_4_5.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/015_payments.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/016_payments_anonymizable.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/017_aspirantes_stripe_customer_id.sql
 ```
 
 ### Flujo de evaluación (pasos automáticos)
@@ -85,10 +94,14 @@ El paso del aspirante se guarda en `aspirantes.evaluation_flow_id` (catálogo `e
 | Transición | Disparador | JWT |
 |------------|------------|-----|
 | 1 → 2 | Activar cuenta (`POST /auth/aspirante/activar-cuenta`) | Sí (nuevo token) |
-| 3 → 4 | Primera respuesta guardada en un intento (`POST /pruebas/aspirantes/respuestas`) mientras `order_id = 3` | No |
-| 4 → 5 | Tras `PATCH /pruebas/aspirantes/:id` con acción `"finalizada por el aspirante"`, cuando **todas** las pruebas habilitadas del hospital (`show=true`, prueba activa) tienen intento en `por_evaluar` o estado posterior | No |
+| 2 → 3 | Pago Stripe exitoso (`payment_intent.succeeded` vía webhook) | Sí (vía `POST /payments/confirm`) |
+| 3 → 4 | Frontend (`POST /auth/aspirante/next-step`) tras pago | Sí (nuevo token) |
+| 4 → 5 | Primera respuesta guardada en un intento (`POST /pruebas/aspirantes/respuestas`) mientras `order_id = 4` | No |
+| 5 → 6 | Tras `PATCH /pruebas/aspirantes/:id` con acción `"finalizada por el aspirante"`, cuando **todas** las pruebas habilitadas del hospital (`show=true`, prueba activa) tienen intento en `por_evaluar` o estado posterior | No |
 
-Los pasos 3→4 y 4→5 no reemiten JWT: el token del aspirante puede quedar con un `evaluationFlowOrderId` anterior; la fuente de verdad para reportes y listados admin es la base de datos (`GET /aspirantes` expone `evaluationFlowId` y `evaluationFlowDescripcion`).
+Los pasos 4→5 y 5→6 no reemiten JWT: el token del aspirante puede quedar con un `evaluationFlowOrderId` anterior; la fuente de verdad para reportes y listados admin es la base de datos (`GET /aspirantes` expone `evaluationFlowId` y `evaluationFlowDescripcion`).
+
+**Pago:** Monto y moneda desde el **Stripe Price** (`STRIPE_PRICE_ID`). Un aspirante en paso 2 no puede usar `next-step` hasta pagar. `POST /payments/intent` devuelve `productName`, `productDescription` y `amountCents` para la UI.
 
 **Nota:** Antes de `001`, asegurar que la tabla `hospitales` exista y que `hospitales.uuid` tenga constraint UNIQUE. Si no existe, agregar:
 
@@ -140,6 +153,15 @@ Con el servidor en ejecución:
 | GET    | `/hospitales/:id`         | Obtener hospital por ID        |
 | POST   | `/auth/admin/login`       | Login administradores          |
 | POST   | `/auth/aspirante/login`   | Login aspirantes               |
+
+**Pagos Stripe** (JWT aspirante, paso 2):
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/payments/intent` | Iniciar pago: incluye `requestThreeDSecure` (`challenge` por defecto) y `billingDefaults` para Payment Element |
+| POST | `/payments/confirm` | Confirmar pago y obtener JWT actualizado (paso 3) |
+
+Webhook (público): `POST /webhooks/stripe` — requiere `stripe listen` en desarrollo.
 
 ### Autenticación
 
@@ -195,6 +217,7 @@ Campos útiles en cada ítem del listado:
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/evaluaciones/veredictos` | Catálogo de veredictos para el informe final |
+| POST | `/evaluaciones/aspirantes/:aspiranteId/asignar` | Reservar evaluación: **asigna evaluador y avanza paso 5→6** sin cargar el workspace (sin body) |
 | GET | `/evaluaciones/aspirantes/:aspiranteId` | Workspace: intentos, respuestas e informe. **Asigna evaluador y avanza paso 5→6** al abrir (evaluador) |
 | PUT | `/evaluaciones/intentos/:idPruebaAspirante` | **Deprecado (410)** — comentarios por prueba ya no soportados |
 | POST | `/evaluaciones/aspirantes/:aspiranteId/informe` | Informe final + veredicto (solo evaluador asignado, paso 6) |
@@ -207,10 +230,11 @@ Campos extra en workspace: `readOnly`, `evaluadorAsignadoEmail`.
 Flujo evaluador:
 
 1. Listar aspirantes con `canEvaluar === true` (pasos 5–6).
-2. Abrir workspace con `GET /evaluaciones/aspirantes/:id` (asigna evaluador y avanza **5 → 6**).
-3. Revisar respuestas de las pruebas (sin comentarios por intento).
-4. Enviar informe con `POST .../informe`.
-5. Confirmar con `POST .../confirmar` (habilitar en UI si `canConfirmarEvaluacion === true` en el workspace).
+2. Opcional: reservar con `POST /evaluaciones/aspirantes/:id/asignar` (asigna evaluador y avanza **5 → 6** sin cargar pruebas).
+3. Abrir workspace con `GET /evaluaciones/aspirantes/:id` (asigna si aún no estaba asignado y carga intentos/respuestas).
+4. Revisar respuestas de las pruebas (sin comentarios por intento).
+5. Enviar informe con `POST .../informe`.
+6. Confirmar con `POST .../confirmar` (habilitar en UI si `canConfirmarEvaluacion === true` en el workspace).
 
 **Pruebas** (JWT admin/evaluador para lectura; crear/editar/borrado lógico solo **administrador** — ver Swagger):
 
@@ -259,6 +283,7 @@ src/
 │   ├── hospital/     # Módulo hospitales
 │   ├── pruebas/      # Catálogo de pruebas
 │   ├── evaluaciones/ # Evaluación de aspirantes por evaluador
+│   ├── payments/     # Pagos Stripe (precio desde STRIPE_PRICE_ID)
 │   └── usuario-administrativo/
 database/
 └── migrations/       # Scripts SQL

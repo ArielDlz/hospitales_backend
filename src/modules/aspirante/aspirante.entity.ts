@@ -29,6 +29,12 @@ export class Aspirante extends TenantBaseEntity {
   @Column({ type: 'text', nullable: true })
   documento: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  genero: string | null;
+
+  @Column({ type: 'date', nullable: true, name: 'fecha_nacimiento' })
+  fechaNacimiento: string | null;
+
   @Column({ type: 'boolean', default: true })
   active: boolean;
 
@@ -53,4 +59,7 @@ export class Aspirante extends TenantBaseEntity {
 
   @Column({ name: 'veredicto_informe', type: 'text', nullable: true })
   veredictoInforme: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'stripe_customer_id' })
+  stripeCustomerId: string | null;
 }

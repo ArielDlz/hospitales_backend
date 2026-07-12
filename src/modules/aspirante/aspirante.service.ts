@@ -5,9 +5,10 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Aspirante } from './aspirante.entity';
@@ -19,6 +20,9 @@ import { CreateAspiranteDto } from './dto/create-aspirante.dto';
 import { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
+import { Payment } from '../payments/entities/payment.entity';
+import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
+import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
 type AspirantePublic = Omit<
   Aspirante,
   'passwordHash' | 'primerAccesoToken' | 'evaluationFlowStep'
@@ -46,6 +50,7 @@ export class AspiranteService {
     private readonly hospitalService: HospitalService,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(
@@ -212,6 +217,27 @@ export class AspiranteService {
           : null,
       ),
     );
+  }
+
+  async remove(id: string, _requester: JwtPayloadAdmin): Promise<void> {
+    const aspirante = await this.aspiranteRepository.findOne({ where: { id } });
+    if (!aspirante) {
+      throw new NotFoundException('Aspirante no encontrado');
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(
+        Payment,
+        { aspiranteId: id },
+        { aspiranteId: null, anonymizedAt: new Date() },
+      );
+
+      await manager.delete(PruebaAspirante, { idAspirante: id });
+      await manager.delete(AspiranteEvaluacion, { idAspirante: id });
+      await manager.delete(Aspirante, { id });
+    });
+
+    this.logger.log(`Aspirante eliminado (id=${id}); pagos anonimizados`);
   }
 
   private async findAllGlobal(

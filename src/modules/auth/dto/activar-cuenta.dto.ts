@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MinLength } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsString,
+  MinLength,
+} from 'class-validator';
+import { GeneroAspirante } from '../../../common/enums/genero-aspirante.enum';
+import { IsFechaNacimientoValida } from '../../../common/validators/is-fecha-nacimiento-valida.validator';
 
 export class ActivarCuentaDto {
   @ApiProperty({
@@ -18,16 +26,6 @@ export class ActivarCuentaDto {
   @IsNotEmpty()
   slug: string;
 
-  @ApiProperty({ example: 'Juan', description: 'Nombre' })
-  @IsString()
-  @IsNotEmpty()
-  nombre: string;
-
-  @ApiProperty({ example: 'García López', description: 'Apellidos' })
-  @IsString()
-  @IsNotEmpty()
-  apellidos: string;
-
   @ApiProperty({
     example: 'REG-2024-001',
     description: 'Registro asignado por el hospital',
@@ -35,11 +33,6 @@ export class ActivarCuentaDto {
   @IsString()
   @IsNotEmpty()
   registroHospital: string;
-
-  @ApiProperty({ example: '+34612345678', description: 'Teléfono' })
-  @IsString()
-  @IsNotEmpty()
-  telefono: string;
 
   @ApiProperty({
     example: '********',
@@ -51,4 +44,20 @@ export class ActivarCuentaDto {
   @IsNotEmpty()
   @MinLength(8)
   password: string;
+
+  @ApiProperty({
+    example: GeneroAspirante.Hombre,
+    enum: GeneroAspirante,
+    description: 'Género del aspirante',
+  })
+  @IsEnum(GeneroAspirante)
+  genero: GeneroAspirante;
+
+  @ApiProperty({
+    example: '1995-03-15',
+    description: 'Fecha de nacimiento (YYYY-MM-DD). Edad entre 15 y 99 años.',
+  })
+  @IsDateString()
+  @IsFechaNacimientoValida()
+  fechaNacimiento: string;
 }

@@ -12,6 +12,7 @@ import { PruebaHospital } from '../pruebas/entities/prueba-hospital.entity';
 import { Prueba } from '../pruebas/entities/prueba.entity';
 import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
+import { SuperuserGuard } from '../auth/guards/superuser.guard';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuari
     MailModule,
   ],
   controllers: [AspiranteController],
-  providers: [AspiranteService, EvaluationFlowService],
+  providers: [AspiranteService, EvaluationFlowService, SuperuserGuard],
   exports: [AspiranteService, EvaluationFlowService],
 })
 export class AspiranteModule {}

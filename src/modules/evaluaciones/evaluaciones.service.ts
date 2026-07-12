@@ -31,6 +31,7 @@ import {
 } from './dto/aspirante-evaluacion-response.dto';
 import { InformePdfService } from './informe-pdf.service';
 import { FirmarInformeResponseDto } from './dto/firmar-informe-response.dto';
+import { AsignarEvaluacionResponseDto } from './dto/asignar-evaluacion-response.dto';
 import { Hospital } from '../hospital/hospital.entity';
 import { S3StorageService } from '../storage/s3-storage.service';
 import {
@@ -85,6 +86,32 @@ export class EvaluacionesService {
       codigo: v.codigo,
       etiqueta: v.etiqueta,
     }));
+  }
+
+  async asignarEvaluacion(
+    aspiranteId: string,
+    user: JwtPayloadAdmin,
+  ): Promise<AsignarEvaluacionResponseDto> {
+    const { aspirante, readOnly } = await this.claimOrAssertAssignment(
+      aspiranteId,
+      user,
+    );
+
+    const orderId = aspirante.evaluationFlowStep?.orderId ?? 0;
+    const evaluadorAsignadoEmail = await this.resolveEvaluadorEmail(
+      aspirante.idEvaluadorAsignado,
+    );
+
+    return {
+      aspiranteId: aspirante.id,
+      evaluationFlowOrderId: orderId,
+      evaluationFlowDescripcion: aspirante.evaluationFlowStep?.descripcion ?? null,
+      evaluadorAsignadoEmail,
+      readOnly,
+      message: readOnly
+        ? 'Acceso de solo lectura'
+        : 'Evaluación asignada correctamente',
+    };
   }
 
   async getWorkspace(

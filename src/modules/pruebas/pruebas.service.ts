@@ -48,6 +48,7 @@ import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 /** Pruebas que en el workspace del evaluador usan formato resumen (sin listar todas las opciones). */
 const PRUEBAS_WORKSPACE_RESUMEN_IDS = new Set([3]);
 const TIPO_PREGUNTA_RESUMEN = 'mostrar_imagen_multi';
+const TEXTO_CORTO_MAX_LENGTH = 155;
 
 @Injectable()
 export class PruebasService {
@@ -78,6 +79,21 @@ export class PruebasService {
   private assertAdministrador(user: JwtPayloadAdmin): void {
     if (user.rol !== RolUsuarioAdmin.Administrador) {
       throw new ForbiddenException('Solo los administradores pueden gestionar el catálogo de pruebas');
+    }
+  }
+
+  async assertAspiranteCanAccessPruebas(aspiranteId: string): Promise<void> {
+    const aspirante = await this.aspiranteRepository.findOne({
+      where: { id: aspiranteId, active: true },
+      relations: ['evaluationFlowStep'],
+    });
+    if (!aspirante?.evaluationFlowStep) {
+      throw new BadRequestException('Aspirante inválido o sin paso de flujo');
+    }
+    if (aspirante.evaluationFlowStep.orderId < 4) {
+      throw new ForbiddenException(
+        'Debes completar el pago antes de iniciar las pruebas',
+      );
     }
   }
 
@@ -246,6 +262,8 @@ export class PruebasService {
     dto: CreatePruebaAspiranteDto,
     user: JwtPayloadAspirante,
   ): Promise<PruebaAspirante> {
+    await this.assertAspiranteCanAccessPruebas(user.sub);
+
     const aspirante = await this.aspiranteRepository.findOne({
       where: { id: user.sub },
       select: ['id', 'tenantId', 'active'],
@@ -407,6 +425,8 @@ export class PruebasService {
     dto: UpdatePruebaAspiranteActionDto,
     user: JwtPayloadAspirante,
   ): Promise<{ message: string }> {
+    await this.assertAspiranteCanAccessPruebas(user.sub);
+
     const registro = await this.pruebaAspiranteRepository.findOne({
       where: {
         idPruebaAspirante,
@@ -441,7 +461,7 @@ export class PruebasService {
       select: ['tenantId'],
     });
     if (aspirante) {
-      await this.evaluationFlowService.tryAdvanceFromStep4(
+      await this.evaluationFlowService.tryAdvanceFromStep5(
         user.sub,
         aspirante.tenantId,
       );
@@ -483,7 +503,7 @@ export class PruebasService {
     tipo: string,
     opcionesMultiples: number[],
   ): string | number | number[] | null {
-    if (tipo === 'texto_libre') {
+    if (tipo === 'texto_libre' || tipo === 'texto_corto') {
       return row.respuestaTexto;
     }
     if (tipo === 'archivo' || tipo === 'cargar_archivo') {
@@ -889,6 +909,26 @@ export class PruebasService {
       };
     }
 
+    if (tipo === 'texto_corto') {
+      if (typeof params.respuesta !== 'string' || !params.respuesta.trim()) {
+        throw new BadRequestException(
+          'Para tipo texto_corto, respuesta debe ser texto no vacío',
+        );
+      }
+      const respuestaTexto = params.respuesta.trim();
+      if (respuestaTexto.length > TEXTO_CORTO_MAX_LENGTH) {
+        throw new BadRequestException(
+          `Para tipo texto_corto, la respuesta no puede exceder ${TEXTO_CORTO_MAX_LENGTH} caracteres`,
+        );
+      }
+      return {
+        respuestaTexto,
+        idPreguntaOpcion: null,
+        urlRespuesta: null,
+        opcionesMultiples: [],
+      };
+    }
+
     if (tipo === 'archivo' || tipo === 'cargar_archivo') {
       if (typeof params.respuesta !== 'string' || !params.respuesta.trim()) {
         throw new BadRequestException(
@@ -980,6 +1020,8 @@ export class PruebasService {
     dto: CreatePruebaRespuestaDto,
     user: JwtPayloadAspirante,
   ): Promise<RespuestaStatusDto> {
+    await this.assertAspiranteCanAccessPruebas(user.sub);
+
     const intento = await this.pruebaAspiranteRepository.findOne({
       where: {
         idPruebaAspirante: dto.id_prueba_aspirante,
@@ -1047,7 +1089,7 @@ export class PruebasService {
       await this.pruebaRespuestaOpcionRepository.save(rows);
     }
 
-    await this.evaluationFlowService.tryAdvanceFromStep3(
+    await this.evaluationFlowService.tryAdvanceFromStep4(
       user.sub,
       dto.id_prueba_aspirante,
     );
@@ -1063,6 +1105,8 @@ export class PruebasService {
     dto: UpdatePruebaRespuestaDto,
     user: JwtPayloadAspirante,
   ): Promise<RespuestaStatusDto> {
+    await this.assertAspiranteCanAccessPruebas(user.sub);
+
     const existente = await this.pruebaRespuestaRepository.findOne({
       where: { idPruebaRespuesta },
     });

@@ -13,6 +13,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { MailModule } from './modules/mail/mail.module';
 import { PruebasModule } from './modules/pruebas/pruebas.module';
 import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 @Module({
   imports: [
@@ -39,6 +40,14 @@ import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
         AWS_SECRET_ACCESS_KEY: Joi.string().allow('').default(''),
         S3_BUCKET: Joi.string().required(),
         S3_PUBLIC_BASE_URL: Joi.string().uri().required(),
+        STRIPE_SECRET_KEY: Joi.string().required(),
+        STRIPE_PUBLISHABLE_KEY: Joi.string().required(),
+        STRIPE_WEBHOOK_SECRET: Joi.string().required(),
+        STRIPE_PRICE_ID: Joi.string().required(),
+        STRIPE_REQUEST_THREE_D_SECURE: Joi.string()
+          .valid('any', 'challenge')
+          .default('challenge'),
+        STRIPE_BILLING_COUNTRY: Joi.string().length(2).uppercase().default('MX'),
       }),
     }),
     TypeOrmModule.forRootAsync({
@@ -62,6 +71,7 @@ import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
     MailModule,
     PruebasModule,
     EvaluacionesModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [

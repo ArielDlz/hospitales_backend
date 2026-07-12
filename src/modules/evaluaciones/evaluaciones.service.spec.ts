@@ -179,6 +179,56 @@ describe('EvaluacionesService', () => {
     service = module.get(EvaluacionesService);
   });
 
+  describe('asignarEvaluacion', () => {
+    it('asigna al evaluador A, avanza 5→6 y no carga intentos', async () => {
+      aspiranteRepo.findOne
+        .mockResolvedValueOnce({ ...aspiranteStep5 })
+        .mockResolvedValueOnce({
+          ...aspiranteStep5,
+          idEvaluadorAsignado: evaluadorAId,
+        })
+        .mockResolvedValueOnce({
+          ...aspiranteStep6AssignedA,
+        });
+
+      const result = await service.asignarEvaluacion(aspiranteId, evaluadorA);
+
+      expect(aspiranteRepo.update).toHaveBeenCalled();
+      expect(evaluationFlowService.advanceOneStepIfAt).toHaveBeenCalledWith(
+        aspiranteId,
+        5,
+      );
+      expect(pruebaAspiranteRepo.find).not.toHaveBeenCalled();
+      expect(result.readOnly).toBe(false);
+      expect(result.evaluationFlowOrderId).toBe(6);
+      expect(result.evaluadorAsignadoEmail).toBe('evaluador-a@hospital.com');
+      expect(result.message).toBe('Evaluación asignada correctamente');
+    });
+
+    it('rechaza evaluador B si A ya está asignado', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteStep6AssignedA,
+      });
+
+      await expect(
+        service.asignarEvaluacion(aspiranteId, evaluadorB),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('permite admin en modo readOnly sin asignar ni avanzar paso', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteStep6AssignedA,
+      });
+
+      const result = await service.asignarEvaluacion(aspiranteId, adminUser);
+
+      expect(result.readOnly).toBe(true);
+      expect(result.message).toBe('Acceso de solo lectura');
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+      expect(evaluationFlowService.advanceOneStepIfAt).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getWorkspace', () => {
     it('asigna al evaluador A, avanza 5→6 y retorna readOnly=false', async () => {
       aspiranteRepo.findOne
