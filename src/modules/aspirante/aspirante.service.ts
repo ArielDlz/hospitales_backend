@@ -229,15 +229,19 @@ export class AspiranteService {
     }
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.update(
-        Payment,
+      const paymentRepo = manager.getRepository(Payment);
+      const pruebaAspiranteRepo = manager.getRepository(PruebaAspirante);
+      const evaluacionRepo = manager.getRepository(AspiranteEvaluacion);
+      const aspiranteRepo = manager.getRepository(Aspirante);
+
+      await paymentRepo.update(
         { aspiranteId: id },
         { aspiranteId: null, anonymizedAt: new Date() },
       );
 
-      await manager.delete(PruebaAspirante, { idAspirante: id });
-      await manager.delete(AspiranteEvaluacion, { idAspirante: id });
-      await manager.delete(Aspirante, { id });
+      await pruebaAspiranteRepo.delete({ idAspirante: id });
+      await evaluacionRepo.delete({ idAspirante: id });
+      await aspiranteRepo.delete({ id });
     });
 
     this.logger.log(`Aspirante eliminado (id=${id}); pagos anonimizados`);

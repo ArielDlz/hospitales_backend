@@ -12,6 +12,8 @@ import { PruebaHospital } from '../pruebas/entities/prueba-hospital.entity';
 import { Prueba } from '../pruebas/entities/prueba.entity';
 import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
+import { Payment } from '../payments/entities/payment.entity';
+import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
 import { SuperuserGuard } from '../auth/guards/superuser.guard';
 
 @Module({
@@ -24,6 +26,8 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
       Prueba,
       PruebaAspirante,
       UsuarioAdministrativo,
+      Payment,
+      AspiranteEvaluacion,
     ]),
     HospitalModule,
     MailModule,
