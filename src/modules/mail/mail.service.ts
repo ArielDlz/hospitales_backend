@@ -4,6 +4,7 @@ import { Aspirante } from '../aspirante/aspirante.entity';
 import { Hospital } from '../hospital/hospital.entity';
 import { BrevoClient } from './brevo.client';
 import { buildPrimerAccesoEmail } from './templates/primer-acceso.template';
+import { buildActivarCuentaEmail } from './templates/activar-cuenta.template';
 import { buildEvaluadorRegistroEmail } from './templates/evaluador-registro.template';
 
 export interface MailFailureAlertContext {
@@ -54,12 +55,7 @@ export class MailService {
   ): Promise<void> {
     this.assertBrevoConfigured();
 
-    const domain = this.configService.get<string>('PRIMER_ACCESO_DOMAIN');
-    if (!domain) {
-      throw new Error('PRIMER_ACCESO_DOMAIN is required for primer acceso links');
-    }
-
-    const activacionUrl = `https://${hospital.slug}.${domain}/confirmar-acceso?token=${token}`;
+    const activacionUrl = this.buildActivacionUrl(hospital, token);
     const { subject, html, text } = buildPrimerAccesoEmail({
       nombre: aspirante.nombre,
       apellidos: aspirante.apellidos,
@@ -76,6 +72,40 @@ export class MailService {
       htmlContent: html,
       textContent: text,
     });
+  }
+
+  async sendActivarCuentaEmail(
+    aspirante: Aspirante,
+    token: string,
+    hospital: Hospital,
+  ): Promise<void> {
+    this.assertBrevoConfigured();
+
+    const activacionUrl = this.buildActivacionUrl(hospital, token);
+    const { subject, html, text } = buildActivarCuentaEmail({
+      nombre: aspirante.nombre,
+      apellidos: aspirante.apellidos,
+      telefono: aspirante.telefono,
+      registroHospital: aspirante.registroHospital,
+      activacionUrl,
+    });
+
+    const sender = this.getSender();
+    await this.brevoClient.sendTransactional({
+      sender,
+      to: [{ email: aspirante.email }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    });
+  }
+
+  private buildActivacionUrl(hospital: Hospital, token: string): string {
+    const domain = this.configService.get<string>('PRIMER_ACCESO_DOMAIN');
+    if (!domain) {
+      throw new Error('PRIMER_ACCESO_DOMAIN is required for primer acceso links');
+    }
+    return `https://${hospital.slug}.${domain}/confirmar-acceso?token=${token}`;
   }
 
   async sendEvaluadorRegistroEmail(

@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -10,11 +11,13 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { Aspirante } from '../aspirante/aspirante.entity';
 import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Hospital } from '../hospital/hospital.entity';
+import { MailService } from '../mail/mail.service';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import {
   JwtPayloadAdmin,
@@ -23,6 +26,11 @@ import {
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { AspiranteLoginDto } from './dto/aspirante-login.dto';
 import { ActivarCuentaDto } from './dto/activar-cuenta.dto';
+import { SolicitarActivacionDto } from './dto/solicitar-activacion.dto';
+import {
+  SolicitarActivacionEstado,
+  SolicitarActivacionResponseDto,
+} from './dto/solicitar-activacion-response.dto';
 
 const CREDENTIALS_ERROR = 'Credenciales inválidas';
 const ACTIVACION_ERROR = 'No se pudo completar la operación';
@@ -43,6 +51,7 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly mailService: MailService,
     @InjectRepository(UsuarioAdministrativo)
     private readonly usuarioRepository: Repository<UsuarioAdministrativo>,
     @InjectRepository(EvaluadorTenant)
@@ -161,6 +170,84 @@ export class AuthService {
     const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN', '7d');
     const accessToken = this.jwtService.sign(payload);
     return { accessToken, expiresIn };
+  }
+
+  async solicitarActivacion(
+    dto: SolicitarActivacionDto,
+  ): Promise<SolicitarActivacionResponseDto> {
+    const slug = dto.slug.trim();
+    const email = dto.email.toLowerCase().trim();
+    const registroHospital = dto.registroHospital.trim();
+
+    const hospital = await this.hospitalRepository.findOne({
+      where: { slug, active: true },
+    });
+    if (!hospital) {
+      return {
+        estado: SolicitarActivacionEstado.NoEncontrado,
+        mensaje: 'No encontramos un aspirante con esos datos en este hospital.',
+      };
+    }
+
+    const aspirante = await this.aspiranteRepository.findOne({
+      where: {
+        tenantId: hospital.uuid,
+        email,
+        registroHospital,
+      },
+    });
+
+    if (!aspirante) {
+      return {
+        estado: SolicitarActivacionEstado.NoEncontrado,
+        mensaje: 'No encontramos un aspirante con esos datos en este hospital.',
+      };
+    }
+
+    if (aspirante.active) {
+      return {
+        estado: SolicitarActivacionEstado.YaActivo,
+        mensaje: 'Tu cuenta ya está activa. Inicia sesión con tu correo y contraseña.',
+      };
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expira = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    aspirante.primerAccesoToken = token;
+    aspirante.primerAccesoExpira = expira;
+    await this.aspiranteRepository.save(aspirante);
+
+    try {
+      await this.mailService.sendActivarCuentaEmail(aspirante, token, hospital);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Fallo envío correo activar cuenta (aspirante ${aspirante.id}): ${errorMessage}`,
+      );
+      try {
+        await this.mailService.sendAdminMailFailureAlert({
+          aspiranteId: aspirante.id,
+          aspiranteEmail: aspirante.email,
+          hospitalNombre: hospital.nombre,
+          errorMessage,
+        });
+      } catch (alertErr) {
+        const alertMessage =
+          alertErr instanceof Error ? alertErr.message : String(alertErr);
+        this.logger.error(
+          `Fallo envío alerta admin por correo (aspirante ${aspirante.id}): ${alertMessage}`,
+        );
+      }
+      throw new ServiceUnavailableException(
+        'No se pudo enviar el correo de activación. Intenta de nuevo más tarde.',
+      );
+    }
+
+    return {
+      estado: SolicitarActivacionEstado.ActivacionEnviada,
+      mensaje:
+        'Enviamos un correo para activar tu cuenta. Revisa tu bandeja de entrada.',
+    };
   }
 
   async validarToken(

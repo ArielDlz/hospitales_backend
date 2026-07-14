@@ -15,6 +15,7 @@ import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-te
 import { Aspirante } from '../aspirante/aspirante.entity';
 import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { Hospital } from '../hospital/hospital.entity';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { Hospital } from '../hospital/hospital.entity';
       EvaluationFlowStep,
       Hospital,
     ]),
+    MailModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

@@ -22,4 +22,11 @@ export class TenantBySlugResponseDto {
 
   @ApiProperty({ example: true, description: 'Indica si el tenant está activo' })
   active: boolean;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Si es true, al crear aspirante se envía correo de invitación. Si es false, el aspirante solicita activación desde el frontend de registro.',
+  })
+  envio_correo_registro: boolean;
 }

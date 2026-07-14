@@ -27,4 +27,8 @@ export class Hospital {
 
   @Column({ type: 'boolean', default: true })
   active: boolean;
+
+  /** When false, create aspirante skips invite email; aspirante self-requests activation. */
+  @Column({ type: 'boolean', default: true, name: 'envio_correo_registro' })
+  envioCorreoRegistro: boolean;
 }

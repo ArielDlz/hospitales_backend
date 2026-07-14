@@ -127,28 +127,31 @@ export class AspiranteService {
 
     const saved = await this.aspiranteRepository.save(aspirante);
 
-    let emailEnviado = true;
-    try {
-      await this.mailService.sendPrimerAccesoEmail(saved, token, hospital);
-    } catch (err) {
-      emailEnviado = false;
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `Fallo envío correo primer acceso (aspirante ${saved.id}): ${errorMessage}`,
-      );
+    let emailEnviado = false;
+    if (hospital.envioCorreoRegistro) {
+      emailEnviado = true;
       try {
-        await this.mailService.sendAdminMailFailureAlert({
-          aspiranteId: saved.id,
-          aspiranteEmail: saved.email,
-          hospitalNombre: hospital.nombre,
-          errorMessage,
-        });
-      } catch (alertErr) {
-        const alertMessage =
-          alertErr instanceof Error ? alertErr.message : String(alertErr);
+        await this.mailService.sendPrimerAccesoEmail(saved, token, hospital);
+      } catch (err) {
+        emailEnviado = false;
+        const errorMessage = err instanceof Error ? err.message : String(err);
         this.logger.error(
-          `Fallo envío alerta admin por correo (aspirante ${saved.id}): ${alertMessage}`,
+          `Fallo envío correo primer acceso (aspirante ${saved.id}): ${errorMessage}`,
         );
+        try {
+          await this.mailService.sendAdminMailFailureAlert({
+            aspiranteId: saved.id,
+            aspiranteEmail: saved.email,
+            hospitalNombre: hospital.nombre,
+            errorMessage,
+          });
+        } catch (alertErr) {
+          const alertMessage =
+            alertErr instanceof Error ? alertErr.message : String(alertErr);
+          this.logger.error(
+            `Fallo envío alerta admin por correo (aspirante ${saved.id}): ${alertMessage}`,
+          );
+        }
       }
     }
 
