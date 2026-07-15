@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -10,11 +11,17 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { Aspirante } from '../aspirante/aspirante.entity';
 import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Hospital } from '../hospital/hospital.entity';
+import {
+  assertTenantAccessWindow,
+  resolveAspiranteJwtExpiresIn,
+} from '../hospital/tenant-access-window';
+import { MailService } from '../mail/mail.service';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import {
   JwtPayloadAdmin,
@@ -23,6 +30,11 @@ import {
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { AspiranteLoginDto } from './dto/aspirante-login.dto';
 import { ActivarCuentaDto } from './dto/activar-cuenta.dto';
+import { SolicitarActivacionDto } from './dto/solicitar-activacion.dto';
+import {
+  SolicitarActivacionEstado,
+  SolicitarActivacionResponseDto,
+} from './dto/solicitar-activacion-response.dto';
 
 const CREDENTIALS_ERROR = 'Credenciales inválidas';
 const ACTIVACION_ERROR = 'No se pudo completar la operación';
@@ -43,6 +55,7 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly mailService: MailService,
     @InjectRepository(UsuarioAdministrativo)
     private readonly usuarioRepository: Repository<UsuarioAdministrativo>,
     @InjectRepository(EvaluadorTenant)
@@ -97,13 +110,15 @@ export class AuthService {
   ): Promise<{ accessToken: string; expiresIn: string }> {
     const hospital = await this.hospitalRepository.findOne({
       where: { slug: dto.slug, active: true },
-      select: ['uuid', 'slug'],
+      select: ['uuid', 'slug', 'accesoAbreAt', 'accesoCierraAt'],
     });
 
     if (!hospital) {
       await bcrypt.compare(dto.password, DUMMY_HASH);
       throw new UnauthorizedException(CREDENTIALS_ERROR);
     }
+
+    assertTenantAccessWindow(hospital);
 
     const aspirante = await this.aspiranteRepository.findOne({
       where: {
@@ -131,12 +146,14 @@ export class AuthService {
     return this.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
+      accesoCierraAt: hospital.accesoCierraAt,
       flowStep: aspirante.evaluationFlowStep,
     });
   }
 
   /**
    * Firma un JWT de aspirante con order_id y descripción del paso actual.
+   * TTL: 1d while tenant access is open (or no close date); 1h after close.
    * Reutilizar tras login, activar cuenta, avanzar/retroceder paso, etc.
    */
   issueAspiranteAccessToken(params: {
@@ -145,6 +162,7 @@ export class AuthService {
       'id' | 'tenantId' | 'registroHospital' | 'nombre' | 'apellidos'
     >;
     hospitalSlug: string;
+    accesoCierraAt: Date | null;
     flowStep: Pick<EvaluationFlowStep, 'orderId' | 'descripcion'>;
   }): { accessToken: string; expiresIn: string } {
     const fullName = `${params.aspirante.nombre} ${params.aspirante.apellidos}`.trim();
@@ -158,9 +176,91 @@ export class AuthService {
       evaluationFlowOrderId: params.flowStep.orderId,
       evaluationFlowDescripcion: params.flowStep.descripcion,
     };
-    const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN', '7d');
-    const accessToken = this.jwtService.sign(payload);
+    const expiresIn = resolveAspiranteJwtExpiresIn({
+      accesoCierraAt: params.accesoCierraAt,
+    });
+    const accessToken = this.jwtService.sign(payload, { expiresIn });
     return { accessToken, expiresIn };
+  }
+
+  async solicitarActivacion(
+    dto: SolicitarActivacionDto,
+  ): Promise<SolicitarActivacionResponseDto> {
+    const slug = dto.slug.trim();
+    const email = dto.email.toLowerCase().trim();
+    const registroHospital = dto.registroHospital.trim();
+
+    const hospital = await this.hospitalRepository.findOne({
+      where: { slug, active: true },
+    });
+    if (!hospital) {
+      return {
+        estado: SolicitarActivacionEstado.NoEncontrado,
+        mensaje: 'No encontramos un aspirante con esos datos en este hospital.',
+      };
+    }
+
+    assertTenantAccessWindow(hospital);
+
+    const aspirante = await this.aspiranteRepository.findOne({
+      where: {
+        tenantId: hospital.uuid,
+        email,
+        registroHospital,
+      },
+    });
+
+    if (!aspirante) {
+      return {
+        estado: SolicitarActivacionEstado.NoEncontrado,
+        mensaje: 'No encontramos un aspirante con esos datos en este hospital.',
+      };
+    }
+
+    if (aspirante.active) {
+      return {
+        estado: SolicitarActivacionEstado.YaActivo,
+        mensaje: 'Tu cuenta ya está activa. Inicia sesión con tu correo y contraseña.',
+      };
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expira = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    aspirante.primerAccesoToken = token;
+    aspirante.primerAccesoExpira = expira;
+    await this.aspiranteRepository.save(aspirante);
+
+    try {
+      await this.mailService.sendActivarCuentaEmail(aspirante, token, hospital);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Fallo envío correo activar cuenta (aspirante ${aspirante.id}): ${errorMessage}`,
+      );
+      try {
+        await this.mailService.sendAdminMailFailureAlert({
+          aspiranteId: aspirante.id,
+          aspiranteEmail: aspirante.email,
+          hospitalNombre: hospital.nombre,
+          errorMessage,
+        });
+      } catch (alertErr) {
+        const alertMessage =
+          alertErr instanceof Error ? alertErr.message : String(alertErr);
+        this.logger.error(
+          `Fallo envío alerta admin por correo (aspirante ${aspirante.id}): ${alertMessage}`,
+        );
+      }
+      throw new ServiceUnavailableException(
+        'No se pudo enviar el correo de activación. Intenta de nuevo más tarde.',
+      );
+    }
+
+    return {
+      estado: SolicitarActivacionEstado.ActivacionEnviada,
+      mensaje:
+        'Enviamos un correo para activar tu cuenta. Revisa tu bandeja de entrada.',
+    };
   }
 
   async validarToken(
@@ -196,6 +296,8 @@ export class AuthService {
       this.logger.warn(`[validarToken] Rechazado: slug no coincide con tenant del token (slug recibido=${slug.trim()}, tenant aspirante=${aspirante.tenantId})`);
       return { valido: false };
     }
+
+    assertTenantAccessWindow(hospital);
 
     this.logger.log(`[validarToken] OK - aspirante=${aspirante.id} hospital=${hospital.nombre}`);
     return {
@@ -233,6 +335,8 @@ export class AuthService {
       throw new BadRequestException(ACTIVACION_ERROR);
     }
 
+    assertTenantAccessWindow(hospital);
+
     if (aspirante.registroHospital.trim() !== dto.registroHospital.trim()) {
       this.logger.warn(`[activarCuenta] Rechazado: registroHospital no coincide`);
       throw new BadRequestException(ACTIVACION_ERROR);
@@ -264,6 +368,7 @@ export class AuthService {
     const tokenBundle = this.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
+      accesoCierraAt: hospital.accesoCierraAt,
       flowStep: pasoRegistrado,
     });
 
@@ -311,7 +416,7 @@ export class AuthService {
 
     const hospital = await this.hospitalRepository.findOne({
       where: { uuid: aspirante.tenantId, active: true },
-      select: ['slug'],
+      select: ['slug', 'accesoCierraAt'],
     });
     if (!hospital) {
       throw new InternalServerErrorException('Hospital no encontrado');
@@ -322,6 +427,7 @@ export class AuthService {
       ...this.issueAspiranteAccessToken({
         aspirante,
         hospitalSlug: hospital.slug,
+        accesoCierraAt: hospital.accesoCierraAt,
         flowStep: nextStep,
       }),
     };
@@ -367,7 +473,7 @@ export class AuthService {
 
     const hospital = await this.hospitalRepository.findOne({
       where: { uuid: aspirante.tenantId, active: true },
-      select: ['slug'],
+      select: ['slug', 'accesoCierraAt'],
     });
     if (!hospital) {
       throw new InternalServerErrorException('Hospital no encontrado');
@@ -378,6 +484,7 @@ export class AuthService {
       ...this.issueAspiranteAccessToken({
         aspirante,
         hospitalSlug: hospital.slug,
+        accesoCierraAt: hospital.accesoCierraAt,
         flowStep: prevStep,
       }),
     };

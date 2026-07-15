@@ -20,6 +20,8 @@ import { AdminLoginDto } from './dto/admin-login.dto';
 import { AspiranteLoginDto } from './dto/aspirante-login.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { ActivarCuentaDto } from './dto/activar-cuenta.dto';
+import { SolicitarActivacionDto } from './dto/solicitar-activacion.dto';
+import { SolicitarActivacionResponseDto } from './dto/solicitar-activacion-response.dto';
 import { FlowStepNavigationResponseDto } from './dto/flow-step-navigation-response.dto';
 import { Public } from './decorators/public.decorator';
 import { AspiranteOnlyGuard } from './guards/aspirante-only.guard';
@@ -57,6 +59,22 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Credenciales inválidas' })
   async loginAspirante(@Body() dto: AspiranteLoginDto) {
     return this.authService.loginAspirante(dto);
+  }
+
+  @Public()
+  @Post('aspirante/solicitar-activacion')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Solicitar correo de activación (email + registroHospital). Para hospitales sin invitación al crear.',
+  })
+  @ApiOkResponse({ type: SolicitarActivacionResponseDto })
+  @ApiResponse({
+    status: 503,
+    description: 'No se pudo enviar el correo de activación',
+  })
+  async solicitarActivacion(@Body() dto: SolicitarActivacionDto) {
+    return this.authService.solicitarActivacion(dto);
   }
 
   @Public()

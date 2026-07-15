@@ -34,4 +34,20 @@ export class HospitalResponseDto {
 
   @ApiProperty({ example: true, description: 'Indica si el hospital está activo' })
   active: boolean;
+
+  @ApiProperty({
+    example: '2026-07-16T06:00:00.000Z',
+    description:
+      'Inicio de la ventana de acceso público aspirante. Null = sin restricción de apertura.',
+    nullable: true,
+  })
+  accesoAbreAt: Date | null;
+
+  @ApiProperty({
+    example: '2026-08-31T05:59:59.000Z',
+    description:
+      'Fin de la ventana de acceso público aspirante. Null = sin restricción de cierre.',
+    nullable: true,
+  })
+  accesoCierraAt: Date | null;
 }

@@ -153,7 +153,7 @@ export class PaymentsService {
 
     const hospital = await this.hospitalRepository.findOne({
       where: { uuid: aspirante.tenantId, active: true },
-      select: ['slug'],
+      select: ['slug', 'accesoCierraAt'],
     });
     if (!hospital) {
       throw new InternalServerErrorException('Hospital no encontrado');
@@ -162,6 +162,7 @@ export class PaymentsService {
     const tokenBundle = this.authService.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
+      accesoCierraAt: hospital.accesoCierraAt,
       flowStep: aspirante.evaluationFlowStep,
     });
 

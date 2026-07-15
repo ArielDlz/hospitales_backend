@@ -14,6 +14,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { PruebasModule } from './modules/pruebas/pruebas.module';
 import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { SolicitudesAccesoModule } from './modules/solicitudes-acceso/solicitudes-acceso.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
     PruebasModule,
     EvaluacionesModule,
     PaymentsModule,
+    SolicitudesAccesoModule,
   ],
   controllers: [AppController],
   providers: [

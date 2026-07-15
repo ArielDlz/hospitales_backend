@@ -86,6 +86,23 @@ describe('MailService', () => {
     ).rejects.toThrow('Brevo no configurado');
   });
 
+  it('sendActivarCuentaEmail should call Brevo with Activa tu cuenta subject and same URL', async () => {
+    await service.sendActivarCuentaEmail(aspirante, 'token-xyz', hospital);
+
+    expect(brevoClient.sendTransactional).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sender: { email: 'registro@arieldelao.dev', name: 'Registro' },
+        to: [{ email: 'aspirante@example.com' }],
+        subject: 'Activa tu cuenta en la plataforma de pruebas psicométricas',
+        htmlContent: expect.stringContaining('Activa tu cuenta'),
+        textContent: expect.stringContaining('REG-001'),
+      }),
+    );
+    expect(brevoClient.sendTransactional.mock.calls[0][0].htmlContent).toContain(
+      'https://hospital-test.arieldelao.dev/confirmar-acceso?token=token-xyz',
+    );
+  });
+
   it('sendEvaluadorRegistroEmail should call Brevo with HTML and login URL', async () => {
     await service.sendEvaluadorRegistroEmail({
       email: 'evaluador@example.com',

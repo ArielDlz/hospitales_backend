@@ -70,7 +70,15 @@ export class HospitalService {
     if (!includeInactive) where.active = true;
     const hospital = await this.hospitalRepository.findOne({
       where,
-      select: ['uuid', 'nombre', 'logoUrl', 'active'],
+      select: [
+        'uuid',
+        'nombre',
+        'logoUrl',
+        'active',
+        'envioCorreoRegistro',
+        'accesoAbreAt',
+        'accesoCierraAt',
+      ],
     });
     if (!hospital) return null;
     return {
@@ -78,6 +86,9 @@ export class HospitalService {
       nombre: hospital.nombre,
       logo_url: hospital.logoUrl,
       active: hospital.active,
+      envio_correo_registro: hospital.envioCorreoRegistro,
+      acceso_abre_at: hospital.accesoAbreAt,
+      acceso_cierra_at: hospital.accesoCierraAt,
     };
   }
 }

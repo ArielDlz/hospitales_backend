@@ -91,7 +91,7 @@ describe('PaymentsService', () => {
   const authService = {
     issueAspiranteAccessToken: jest.fn().mockReturnValue({
       accessToken: 'jwt-token',
-      expiresIn: '7d',
+      expiresIn: '1d',
     }),
   };
   const evaluationFlowService = {
@@ -577,7 +577,7 @@ describe('PaymentsService', () => {
       expect(result).toEqual({
         paid: true,
         accessToken: 'jwt-token',
-        expiresIn: '7d',
+        expiresIn: '1d',
         evaluationFlowOrderId: 3,
       });
       expect(authService.issueAspiranteAccessToken).toHaveBeenCalled();
