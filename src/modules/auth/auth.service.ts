@@ -17,6 +17,10 @@ import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Hospital } from '../hospital/hospital.entity';
+import {
+  assertTenantAccessWindow,
+  resolveAspiranteJwtExpiresIn,
+} from '../hospital/tenant-access-window';
 import { MailService } from '../mail/mail.service';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import {
@@ -106,13 +110,15 @@ export class AuthService {
   ): Promise<{ accessToken: string; expiresIn: string }> {
     const hospital = await this.hospitalRepository.findOne({
       where: { slug: dto.slug, active: true },
-      select: ['uuid', 'slug'],
+      select: ['uuid', 'slug', 'accesoAbreAt', 'accesoCierraAt'],
     });
 
     if (!hospital) {
       await bcrypt.compare(dto.password, DUMMY_HASH);
       throw new UnauthorizedException(CREDENTIALS_ERROR);
     }
+
+    assertTenantAccessWindow(hospital);
 
     const aspirante = await this.aspiranteRepository.findOne({
       where: {
@@ -140,12 +146,14 @@ export class AuthService {
     return this.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
+      accesoCierraAt: hospital.accesoCierraAt,
       flowStep: aspirante.evaluationFlowStep,
     });
   }
 
   /**
    * Firma un JWT de aspirante con order_id y descripción del paso actual.
+   * TTL: 1d while tenant access is open (or no close date); 1h after close.
    * Reutilizar tras login, activar cuenta, avanzar/retroceder paso, etc.
    */
   issueAspiranteAccessToken(params: {
@@ -154,6 +162,7 @@ export class AuthService {
       'id' | 'tenantId' | 'registroHospital' | 'nombre' | 'apellidos'
     >;
     hospitalSlug: string;
+    accesoCierraAt: Date | null;
     flowStep: Pick<EvaluationFlowStep, 'orderId' | 'descripcion'>;
   }): { accessToken: string; expiresIn: string } {
     const fullName = `${params.aspirante.nombre} ${params.aspirante.apellidos}`.trim();
@@ -167,8 +176,10 @@ export class AuthService {
       evaluationFlowOrderId: params.flowStep.orderId,
       evaluationFlowDescripcion: params.flowStep.descripcion,
     };
-    const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN', '7d');
-    const accessToken = this.jwtService.sign(payload);
+    const expiresIn = resolveAspiranteJwtExpiresIn({
+      accesoCierraAt: params.accesoCierraAt,
+    });
+    const accessToken = this.jwtService.sign(payload, { expiresIn });
     return { accessToken, expiresIn };
   }
 
@@ -188,6 +199,8 @@ export class AuthService {
         mensaje: 'No encontramos un aspirante con esos datos en este hospital.',
       };
     }
+
+    assertTenantAccessWindow(hospital);
 
     const aspirante = await this.aspiranteRepository.findOne({
       where: {
@@ -284,6 +297,8 @@ export class AuthService {
       return { valido: false };
     }
 
+    assertTenantAccessWindow(hospital);
+
     this.logger.log(`[validarToken] OK - aspirante=${aspirante.id} hospital=${hospital.nombre}`);
     return {
       valido: true,
@@ -320,6 +335,8 @@ export class AuthService {
       throw new BadRequestException(ACTIVACION_ERROR);
     }
 
+    assertTenantAccessWindow(hospital);
+
     if (aspirante.registroHospital.trim() !== dto.registroHospital.trim()) {
       this.logger.warn(`[activarCuenta] Rechazado: registroHospital no coincide`);
       throw new BadRequestException(ACTIVACION_ERROR);
@@ -351,6 +368,7 @@ export class AuthService {
     const tokenBundle = this.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
+      accesoCierraAt: hospital.accesoCierraAt,
       flowStep: pasoRegistrado,
     });
 
@@ -398,7 +416,7 @@ export class AuthService {
 
     const hospital = await this.hospitalRepository.findOne({
       where: { uuid: aspirante.tenantId, active: true },
-      select: ['slug'],
+      select: ['slug', 'accesoCierraAt'],
     });
     if (!hospital) {
       throw new InternalServerErrorException('Hospital no encontrado');
@@ -409,6 +427,7 @@ export class AuthService {
       ...this.issueAspiranteAccessToken({
         aspirante,
         hospitalSlug: hospital.slug,
+        accesoCierraAt: hospital.accesoCierraAt,
         flowStep: nextStep,
       }),
     };
@@ -454,7 +473,7 @@ export class AuthService {
 
     const hospital = await this.hospitalRepository.findOne({
       where: { uuid: aspirante.tenantId, active: true },
-      select: ['slug'],
+      select: ['slug', 'accesoCierraAt'],
     });
     if (!hospital) {
       throw new InternalServerErrorException('Hospital no encontrado');
@@ -465,6 +484,7 @@ export class AuthService {
       ...this.issueAspiranteAccessToken({
         aspirante,
         hospitalSlug: hospital.slug,
+        accesoCierraAt: hospital.accesoCierraAt,
         flowStep: prevStep,
       }),
     };

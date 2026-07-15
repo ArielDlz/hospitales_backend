@@ -85,6 +85,28 @@ psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/009_evaluati
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/015_payments.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/016_payments_anonymizable.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/017_aspirantes_stripe_customer_id.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/018_hospitales_envio_correo_registro.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/019_solicitudes_acceso.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/020_hospitales_acceso_ventana.sql
+```
+
+### Ventana de acceso por hospital (tenant)
+
+Columnas `hospitales.acceso_abre_at` y `hospitales.acceso_cierra_at` (`TIMESTAMPTZ`, nullable).
+
+- **NULL** = sin restricción (fail open).
+- Si `acceso_abre_at` está definido y aún no llegó → `403` *"Todavía no se abre el acceso"* en login, activación y solicitudes de acceso.
+- Si `acceso_cierra_at` está definido y ya pasó → `403` *"El tiempo para aplicar las pruebas ha finalizado"* en esos mismos endpoints públicos.
+- Aspirantes ya autenticados pueden seguir con pruebas; al reemitir JWT: `1d` si el tenant no ha cerrado, `1h` después del cierre.
+- `GET /hospitales/by-slug/:slug` expone `acceso_abre_at` y `acceso_cierra_at` para la UI.
+
+Ejemplo (hora Ciudad de México, UTC−6):
+
+```sql
+UPDATE hospitales
+SET acceso_abre_at = '2026-07-16T00:00:00-06:00',
+    acceso_cierra_at = '2026-08-31T23:59:59-06:00'
+WHERE slug = '<slug>';
 ```
 
 ### Flujo de evaluación (pasos automáticos)
