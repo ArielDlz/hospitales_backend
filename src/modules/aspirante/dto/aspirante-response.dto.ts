@@ -85,8 +85,23 @@ export class AspiranteResponseDto {
   @ApiProperty({ example: 'presencial', nullable: true })
   modalidad: string | null;
 
+  @ApiProperty({ example: 'Cardiología', nullable: true })
+  especialidad: string | null;
+
+  @ApiProperty({ example: 'Mexicana', nullable: true })
+  nacionalidad: string | null;
+
+  @ApiProperty({ example: 'AUCR020402XXX', nullable: true })
+  rfc: string | null;
+
   @ApiProperty({ example: '12345678A', nullable: true })
   documento: string | null;
+
+  @ApiProperty({ example: 'Hombre', nullable: true })
+  genero: string | null;
+
+  @ApiProperty({ example: '1995-03-15', nullable: true })
+  fechaNacimiento: string | null;
 
   @ApiProperty({
     description: 'Borrado lógico / estado activo',
