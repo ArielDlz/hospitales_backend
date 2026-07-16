@@ -9,7 +9,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Aspirante } from '../aspirante/aspirante.entity';
@@ -27,6 +27,7 @@ import {
   JwtPayloadAdmin,
   JwtPayloadAspirante,
 } from '../../common/interfaces/jwt-payload.interface';
+import { getRequestId } from '../../common/request-context';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { AspiranteLoginDto } from './dto/aspirante-login.dto';
 import { ActivarCuentaDto } from './dto/activar-cuenta.dto';
@@ -39,10 +40,46 @@ import {
 const CREDENTIALS_ERROR = 'Credenciales inválidas';
 const ACTIVACION_ERROR = 'No se pudo completar la operación';
 
-/** Redacta token para logs: solo primeros/últimos 4 chars */
+function withReqId(message: string): string {
+  const reqId = getRequestId();
+  return reqId ? `reqId=${reqId} ${message}` : message;
+}
+/** Redacta token para logs: prefijo/sufijo + longitud (suficiente para cruzar con DB). */
 function maskToken(token: string): string {
-  if (!token || token.length < 12) return '***';
-  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+  if (!token) return '(vacío)';
+  const len = token.length;
+  if (len < 16) return `(len=${len})***`;
+  return `${token.slice(0, 12)}...${token.slice(-8)} (len=${len})`;
+}
+
+function tokenFingerprint(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex').slice(0, 12);
+}
+
+function formatAspiranteLog(
+  aspirante: Pick<
+    Aspirante,
+    | 'id'
+    | 'email'
+    | 'registroHospital'
+    | 'active'
+    | 'tenantId'
+    | 'primerAccesoExpira'
+    | 'evaluationFlowId'
+  >,
+): string {
+  const expira = aspirante.primerAccesoExpira
+    ? aspirante.primerAccesoExpira.toISOString()
+    : '(null)';
+  return [
+    `id=${aspirante.id}`,
+    `email=${aspirante.email}`,
+    `registro=${aspirante.registroHospital}`,
+    `active=${aspirante.active}`,
+    `tenantId=${aspirante.tenantId}`,
+    `flowId=${aspirante.evaluationFlowId}`,
+    `expira=${expira}`,
+  ].join(' ');
 }
 
 // Hash bcrypt válido de "dummy" para mitigar timing attacks cuando el usuario no existe
@@ -235,7 +272,9 @@ export class AuthService {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.error(
-        `Fallo envío correo activar cuenta (aspirante ${aspirante.id}): ${errorMessage}`,
+        withReqId(
+          `Fallo envío correo activar cuenta (aspirante ${aspirante.id}): ${errorMessage}`,
+        ),
       );
       try {
         await this.mailService.sendAdminMailFailureAlert({
@@ -248,7 +287,9 @@ export class AuthService {
         const alertMessage =
           alertErr instanceof Error ? alertErr.message : String(alertErr);
         this.logger.error(
-          `Fallo envío alerta admin por correo (aspirante ${aspirante.id}): ${alertMessage}`,
+          withReqId(
+            `Fallo envío alerta admin por correo (aspirante ${aspirante.id}): ${alertMessage}`,
+          ),
         );
       }
       throw new ServiceUnavailableException(
@@ -267,39 +308,87 @@ export class AuthService {
     token: string,
     slug: string,
   ): Promise<{ valido: true; hospitalNombre: string; slug: string } | { valido: false }> {
-    this.logger.log(`[validarToken] Inicio - slug=${slug?.trim() || '(vacío)'} token=${maskToken(token || '')}`);
+    const rawToken = token ?? '';
+    const rawSlug = slug ?? '';
+    const trimmedToken = rawToken.trim();
+    const trimmedSlug = rawSlug.trim();
 
-    if (!token?.trim() || !slug?.trim()) {
-      this.logger.warn(`[validarToken] Rechazado: token o slug vacíos`);
+    this.logger.log(
+      withReqId(
+        `[validarToken] Inicio - slug=${trimmedSlug || '(vacío)'} ` +
+          `token=${maskToken(trimmedToken)} fp=${trimmedToken ? tokenFingerprint(trimmedToken) : '(n/a)'} ` +
+          `hadWhitespace=${rawToken !== trimmedToken}`,
+      ),
+    );
+
+    if (!trimmedToken || !trimmedSlug) {
+      this.logger.warn(
+        withReqId(
+          `[validarToken] Rechazado: token o slug vacíos ` +
+            `(tokenEmpty=${!trimmedToken} slugEmpty=${!trimmedSlug})`,
+        ),
+      );
       return { valido: false };
     }
 
     const aspirante = await this.aspiranteRepository.findOne({
       where: {
-        primerAccesoToken: token.trim(),
+        primerAccesoToken: trimmedToken,
       },
     });
 
-    if (!aspirante || !aspirante.primerAccesoExpira) {
-      this.logger.warn(`[validarToken] Rechazado: aspirante no encontrado para token`);
+    if (!aspirante) {
+      await this.logPrimerAccesoTokenMiss('validarToken', trimmedToken, trimmedSlug);
       return { valido: false };
     }
+
+    if (!aspirante.primerAccesoExpira) {
+      this.logger.warn(
+        withReqId(
+          `[validarToken] Rechazado: aspirante sin primerAccesoExpira - ${formatAspiranteLog(aspirante)}`,
+        ),
+      );
+      return { valido: false };
+    }
+
     if (aspirante.primerAccesoExpira <= new Date()) {
-      this.logger.warn(`[validarToken] Rechazado: token expirado (expira=${aspirante.primerAccesoExpira.toISOString()})`);
+      this.logger.warn(
+        withReqId(
+          `[validarToken] Rechazado: token expirado - ${formatAspiranteLog(aspirante)}`,
+        ),
+      );
       return { valido: false };
     }
 
     const hospital = await this.hospitalRepository.findOne({
-      where: { uuid: aspirante.tenantId, slug: slug.trim() },
+      where: { uuid: aspirante.tenantId, slug: trimmedSlug },
     });
     if (!hospital || hospital.uuid !== aspirante.tenantId) {
-      this.logger.warn(`[validarToken] Rechazado: slug no coincide con tenant del token (slug recibido=${slug.trim()}, tenant aspirante=${aspirante.tenantId})`);
+      const hospitalBySlug = await this.hospitalRepository.findOne({
+        where: { slug: trimmedSlug },
+        select: ['uuid', 'slug', 'nombre'],
+      });
+      this.logger.warn(
+        withReqId(
+          `[validarToken] Rechazado: slug no coincide con tenant del token - ` +
+            `${formatAspiranteLog(aspirante)} slugRecibido=${trimmedSlug} ` +
+            `hospitalPorSlug=${
+              hospitalBySlug
+                ? `${hospitalBySlug.slug}/${hospitalBySlug.uuid}`
+                : '(no existe)'
+            }`,
+        ),
+      );
       return { valido: false };
     }
 
     assertTenantAccessWindow(hospital);
 
-    this.logger.log(`[validarToken] OK - aspirante=${aspirante.id} hospital=${hospital.nombre}`);
+    this.logger.log(
+      withReqId(
+        `[validarToken] OK - ${formatAspiranteLog(aspirante)} hospital=${hospital.nombre}`,
+      ),
+    );
     return {
       valido: true,
       hospitalNombre: hospital.nombre,
@@ -307,48 +396,168 @@ export class AuthService {
     };
   }
 
+  /**
+   * Diagnóstico cuando no hay match exacto de primer_acceso_token.
+   * No imprime el token completo; sí fingerprint, hospital y candidatos por prefijo.
+   */
+  private async logPrimerAccesoTokenMiss(
+    context: string,
+    trimmedToken: string,
+    trimmedSlug: string,
+  ): Promise<void> {
+    const hospital = await this.hospitalRepository.findOne({
+      where: { slug: trimmedSlug },
+      select: ['uuid', 'slug', 'nombre', 'active'],
+    });
+
+    let pendingTokensForHospital = 0;
+    let prefixMatches: Array<{
+      id: string;
+      email: string;
+      active: boolean;
+      primerAccesoExpira: Date | null;
+      tokenMask: string;
+    }> = [];
+
+    if (hospital) {
+      pendingTokensForHospital = await this.aspiranteRepository.count({
+        where: {
+          tenantId: hospital.uuid,
+          primerAccesoToken: Not(IsNull()),
+        },
+      });
+
+      const prefix = trimmedToken.slice(0, 12);
+      if (prefix.length >= 8) {
+        const candidates = await this.aspiranteRepository
+          .createQueryBuilder('a')
+          .select([
+            'a.id',
+            'a.email',
+            'a.active',
+            'a.primerAccesoExpira',
+            'a.primerAccesoToken',
+          ])
+          .where('a.tenant_id = :tenantId', { tenantId: hospital.uuid })
+          .andWhere('a.primer_acceso_token IS NOT NULL')
+          .andWhere('a.primer_acceso_token LIKE :prefix', {
+            prefix: `${prefix}%`,
+          })
+          .take(5)
+          .getMany();
+
+        prefixMatches = candidates.map((c) => ({
+          id: c.id,
+          email: c.email,
+          active: c.active,
+          primerAccesoExpira: c.primerAccesoExpira,
+          tokenMask: maskToken(c.primerAccesoToken ?? ''),
+        }));
+      }
+    }
+
+    this.logger.warn(
+      withReqId(
+        `[${context}] Rechazado: aspirante no encontrado para token - ` +
+          `token=${maskToken(trimmedToken)} fp=${tokenFingerprint(trimmedToken)} ` +
+          `slug=${trimmedSlug} hospital=${
+            hospital
+              ? `${hospital.nombre} uuid=${hospital.uuid} active=${hospital.active}`
+              : '(slug no existe)'
+          } ` +
+          `aspirantesConTokenPendiente=${pendingTokensForHospital} ` +
+          `matchesPorPrefijo=${prefixMatches.length}` +
+          (prefixMatches.length
+            ? ` detalle=${JSON.stringify(
+                prefixMatches.map((m) => ({
+                  id: m.id,
+                  email: m.email,
+                  active: m.active,
+                  expira: m.primerAccesoExpira?.toISOString() ?? null,
+                  token: m.tokenMask,
+                })),
+              )}`
+            : ''),
+      ),
+    );
+  }
+
   async activarCuenta(
     dto: ActivarCuentaDto,
   ): Promise<{ mensaje: string; accessToken?: string; expiresIn?: string }> {
-    this.logger.log(`[activarCuenta] Inicio - slug=${dto.slug} token=${maskToken(dto.token)}`);
+    const trimmedToken = dto.token.trim();
+    const trimmedSlug = dto.slug.trim();
+    this.logger.log(
+      withReqId(
+        `[activarCuenta] Inicio - slug=${trimmedSlug} ` +
+          `token=${maskToken(trimmedToken)} fp=${tokenFingerprint(trimmedToken)} ` +
+          `registro=${dto.registroHospital.trim()}`,
+      ),
+    );
 
     const aspirante = await this.aspiranteRepository.findOne({
       where: {
-        primerAccesoToken: dto.token.trim(),
+        primerAccesoToken: trimmedToken,
       },
     });
 
+    if (!aspirante) {
+      await this.logPrimerAccesoTokenMiss('activarCuenta', trimmedToken, trimmedSlug);
+      throw new BadRequestException(ACTIVACION_ERROR);
+    }
+
     if (
-      !aspirante ||
       !aspirante.primerAccesoExpira ||
       aspirante.primerAccesoExpira <= new Date()
     ) {
-      this.logger.warn(`[activarCuenta] Rechazado: token inválido o expirado (aspirante encontrado=${!!aspirante})`);
+      this.logger.warn(
+        withReqId(
+          `[activarCuenta] Rechazado: token inválido o expirado - ${formatAspiranteLog(aspirante)}`,
+        ),
+      );
       throw new BadRequestException(ACTIVACION_ERROR);
     }
 
     const hospital = await this.hospitalRepository.findOne({
-      where: { uuid: aspirante.tenantId, slug: dto.slug.trim() },
+      where: { uuid: aspirante.tenantId, slug: trimmedSlug },
     });
     if (!hospital || hospital.uuid !== aspirante.tenantId) {
-      this.logger.warn(`[activarCuenta] Rechazado: slug no coincide (slug=${dto.slug} tenant=${aspirante.tenantId})`);
+      this.logger.warn(
+        withReqId(
+          `[activarCuenta] Rechazado: slug no coincide - ${formatAspiranteLog(aspirante)} ` +
+            `slugRecibido=${trimmedSlug}`,
+        ),
+      );
       throw new BadRequestException(ACTIVACION_ERROR);
     }
 
     assertTenantAccessWindow(hospital);
 
     if (aspirante.registroHospital.trim() !== dto.registroHospital.trim()) {
-      this.logger.warn(`[activarCuenta] Rechazado: registroHospital no coincide`);
+      this.logger.warn(
+        withReqId(
+          `[activarCuenta] Rechazado: registroHospital no coincide - ` +
+            `${formatAspiranteLog(aspirante)} registroRecibido=${dto.registroHospital.trim()}`,
+        ),
+      );
       throw new BadRequestException(ACTIVACION_ERROR);
     }
 
-    this.logger.log(`[activarCuenta] Validación OK - activando aspirante=${aspirante.id}`);
+    this.logger.log(
+      withReqId(
+        `[activarCuenta] Validación OK - activando ${formatAspiranteLog(aspirante)}`,
+      ),
+    );
 
     const pasoRegistrado = await this.evaluationFlowStepRepository.findOne({
       where: { orderId: 2 },
     });
     if (!pasoRegistrado) {
-      this.logger.error('[activarCuenta] Falta paso evaluation_flow_steps con order_id = 2');
+      this.logger.error(
+        withReqId(
+          '[activarCuenta] Falta paso evaluation_flow_steps con order_id = 2',
+        ),
+      );
       throw new InternalServerErrorException(
         'Catálogo evaluation_flow_steps no inicializado (falta paso order_id = 2)',
       );
@@ -363,7 +572,11 @@ export class AuthService {
     aspirante.evaluationFlowId = pasoRegistrado.id;
     await this.aspiranteRepository.save(aspirante);
 
-    this.logger.log(`[activarCuenta] Cuenta activada - aspirante=${aspirante.id} hospital=${hospital.nombre}`);
+    this.logger.log(
+      withReqId(
+        `[activarCuenta] Cuenta activada - aspirante=${aspirante.id} email=${aspirante.email} hospital=${hospital.nombre}`,
+      ),
+    );
 
     const tokenBundle = this.issueAspiranteAccessToken({
       aspirante,

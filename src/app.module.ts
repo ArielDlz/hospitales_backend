@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as Joi from 'joi';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 import { HospitalModule } from './modules/hospital/hospital.module';
 import { AspiranteModule } from './modules/aspirante/aspirante.module';
 import { UsuarioAdministrativoModule } from './modules/usuario-administrativo/usuario-administrativo.module';
@@ -81,6 +82,10 @@ import { SolicitudesAccesoModule } from './modules/solicitudes-acceso/solicitude
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: RequestLoggingInterceptor,
     },
   ],
 })
