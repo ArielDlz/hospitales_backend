@@ -27,6 +27,15 @@ export class Aspirante extends TenantBaseEntity {
   modalidad: string | null;
 
   @Column({ type: 'text', nullable: true })
+  especialidad: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  nacionalidad: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  rfc: string | null;
+
+  @Column({ type: 'text', nullable: true })
   documento: string | null;
 
   @Column({ type: 'text', nullable: true })

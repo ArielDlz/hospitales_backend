@@ -88,6 +88,7 @@ psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/017_aspirant
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/018_hospitales_envio_correo_registro.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/019_solicitudes_acceso.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/020_hospitales_acceso_ventana.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/021_aspirantes_especialidad_nacionalidad_rfc.sql
 ```
 
 ### Ventana de acceso por hospital (tenant)

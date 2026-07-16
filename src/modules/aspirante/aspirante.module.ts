@@ -4,6 +4,7 @@ import { Aspirante } from './aspirante.entity';
 import { EvaluationFlowStep } from './evaluation-flow-step.entity';
 import { AspiranteController } from './aspirante.controller';
 import { AspiranteService } from './aspirante.service';
+import { AspiranteImportService } from './import/aspirante-import.service';
 import { EvaluationFlowService } from './evaluation-flow.service';
 import { HospitalModule } from '../hospital/hospital.module';
 import { MailModule } from '../mail/mail.module';
@@ -33,7 +34,12 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
     MailModule,
   ],
   controllers: [AspiranteController],
-  providers: [AspiranteService, EvaluationFlowService, SuperuserGuard],
+  providers: [
+    AspiranteService,
+    AspiranteImportService,
+    EvaluationFlowService,
+    SuperuserGuard,
+  ],
   exports: [AspiranteService, EvaluationFlowService],
 })
 export class AspiranteModule {}
