@@ -90,7 +90,7 @@ export class PruebasService {
     if (!aspirante?.evaluationFlowStep) {
       throw new BadRequestException('Aspirante inválido o sin paso de flujo');
     }
-    if (aspirante.evaluationFlowStep.orderId < 4) {
+    if (aspirante.evaluationFlowStep.orderId < 3) {
       throw new ForbiddenException(
         'Debes completar el pago antes de iniciar las pruebas',
       );
@@ -303,7 +303,9 @@ export class PruebasService {
     });
 
     try {
-      return await this.pruebaAspiranteRepository.save(entity);
+      const saved = await this.pruebaAspiranteRepository.save(entity);
+      await this.evaluationFlowService.advanceOneStepIfAt(aspirante.id, 3);
+      return saved;
     } catch (error) {
       if (
         error instanceof QueryFailedError &&

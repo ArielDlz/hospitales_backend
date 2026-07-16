@@ -118,7 +118,7 @@ El paso del aspirante se guarda en `aspirantes.evaluation_flow_id` (catálogo `e
 |------------|------------|-----|
 | 1 → 2 | Activar cuenta (`POST /auth/aspirante/activar-cuenta`) | Sí (nuevo token) |
 | 2 → 3 | Pago Stripe exitoso (`payment_intent.succeeded` vía webhook) | Sí (vía `POST /payments/confirm`) |
-| 3 → 4 | Frontend (`POST /auth/aspirante/next-step`) tras pago | Sí (nuevo token) |
+| 3 → 4 | Al iniciar la primera prueba (`POST /pruebas/aspirantes`); también `POST /auth/aspirante/next-step` | Sí solo vía `next-step` |
 | 4 → 5 | Primera respuesta guardada en un intento (`POST /pruebas/aspirantes/respuestas`) mientras `order_id = 4` | No |
 | 5 → 6 | Tras `PATCH /pruebas/aspirantes/:id` con acción `"finalizada por el aspirante"`, cuando **todas** las pruebas habilitadas del hospital (`show=true`, prueba activa) tienen intento en `por_evaluar` o estado posterior | No |
 
