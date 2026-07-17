@@ -135,6 +135,38 @@ describe('aspirante-import.parser', () => {
       );
     });
 
+    it('accepts files with only required headers (optional columns omitted)', async () => {
+      const buffer = await buildWorkbook(
+        [
+          {
+            registro_hospital: 'REG-1',
+            email: 'solo@example.com',
+            apellidos: 'Pérez',
+            nombre: 'Ana',
+          },
+        ],
+        ['registro_hospital', 'email', 'apellidos', 'nombre'],
+      );
+
+      const parsed = await parseAspiranteImportBuffer(buffer);
+      expect(parsed.rows).toHaveLength(1);
+      expect(parsed.parseErrors).toHaveLength(0);
+      expect(parsed.rows[0]).toMatchObject({
+        registroHospital: 'REG-1',
+        email: 'solo@example.com',
+        apellidos: 'Pérez',
+        nombre: 'Ana',
+        documento: null,
+        especialidad: null,
+        modalidad: null,
+        nacionalidad: null,
+        rfc: null,
+        telefono: null,
+        genero: null,
+        fechaNacimiento: null,
+      });
+    });
+
     it('rejects more than max rows', async () => {
       const rows = Array.from({ length: ASPIRANTE_IMPORT_MAX_ROWS + 1 }, (_, i) => ({
         registro_hospital: `REG-${i}`,

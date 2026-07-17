@@ -212,13 +212,6 @@ export async function parseAspiranteImportBuffer(
     );
   }
 
-  const missingAny = ASPIRANTE_IMPORT_HEADERS.filter((h) => !headerIndex.has(h));
-  if (missingAny.length > 0) {
-    throw new AspiranteImportFileError(
-      `Faltan columnas en el encabezado: ${missingAny.join(', ')}. Se esperan: ${ASPIRANTE_IMPORT_HEADERS.join(', ')}`,
-    );
-  }
-
   const rows: AspiranteImportParsedRow[] = [];
   const parseErrors: Array<{ rowNumber: number; messages: string[] }> = [];
 
@@ -226,7 +219,10 @@ export async function parseAspiranteImportBuffer(
   for (let rowNumber = 2; rowNumber <= lastRow; rowNumber++) {
     const row = sheet.getRow(rowNumber);
     const get = (header: AspiranteImportHeader): ExcelJS.CellValue => {
-      const col = headerIndex.get(header)!;
+      const col = headerIndex.get(header);
+      if (col == null) {
+        return null;
+      }
       return row.getCell(col).value;
     };
 

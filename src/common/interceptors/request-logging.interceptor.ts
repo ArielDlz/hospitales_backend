@@ -15,7 +15,7 @@ import {
   isAspirantePayload,
   JwtPayload,
 } from '../interfaces/jwt-payload.interface';
-import { runWithRequestContext } from '../request-context';
+import { getRequestId } from '../request-context';
 
 const SKIP_EXACT = new Set(['/', '/api', '/api-json']);
 
@@ -75,7 +75,8 @@ export class RequestLoggingInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    const requestId = randomUUID().slice(0, 8);
+    // Prefer ALS from RequestContextMiddleware; fallback only if middleware missed.
+    const requestId = getRequestId() ?? randomUUID().slice(0, 8);
     const startedAt = Date.now();
     const actorLine = formatActor(req.user);
     const actorShort = shortActor(req.user);
@@ -85,40 +86,26 @@ export class RequestLoggingInterceptor implements NestInterceptor {
     );
     this.logger.log(`[${requestId}] ${actorLine}`);
 
-    // Keep ALS active across async RxJS subscription so AuthService can read reqId
-    return new Observable((subscriber) => {
-      let innerSub: { unsubscribe: () => void } | undefined;
-      runWithRequestContext({ requestId }, () => {
-        innerSub = next
-          .handle()
-          .pipe(
-            tap(() => {
-              const durationMs = Date.now() - startedAt;
-              this.logger.log(
-                `---------- End request [${requestId}] ${res.statusCode} ${durationMs}ms ${actorShort} ----------`,
-              );
-            }),
-            catchError((err: unknown) => {
-              const durationMs = Date.now() - startedAt;
-              const status =
-                err instanceof HttpException
-                  ? err.getStatus()
-                  : res.statusCode || 500;
-              const errorName =
-                err instanceof Error ? err.constructor.name : 'Error';
-              this.logger.warn(
-                `---------- End request [${requestId}] ${status} ${durationMs}ms ${actorShort} error=${errorName} ----------`,
-              );
-              return throwError(() => err);
-            }),
-          )
-          .subscribe({
-            next: (value) => subscriber.next(value),
-            error: (err) => subscriber.error(err),
-            complete: () => subscriber.complete(),
-          });
-      });
-      return () => innerSub?.unsubscribe();
-    });
+    return next.handle().pipe(
+      tap(() => {
+        const durationMs = Date.now() - startedAt;
+        this.logger.log(
+          `---------- End request [${requestId}] ${res.statusCode} ${durationMs}ms ${actorShort} ----------`,
+        );
+      }),
+      catchError((err: unknown) => {
+        const durationMs = Date.now() - startedAt;
+        const status =
+          err instanceof HttpException
+            ? err.getStatus()
+            : res.statusCode || 500;
+        const errorName =
+          err instanceof Error ? err.constructor.name : 'Error';
+        this.logger.warn(
+          `---------- End request [${requestId}] ${status} ${durationMs}ms ${actorShort} error=${errorName} ----------`,
+        );
+        return throwError(() => err);
+      }),
+    );
   }
 }
