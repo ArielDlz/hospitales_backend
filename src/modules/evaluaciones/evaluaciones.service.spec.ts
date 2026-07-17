@@ -197,6 +197,7 @@ describe('EvaluacionesService', () => {
       expect(evaluationFlowService.advanceOneStepIfAt).toHaveBeenCalledWith(
         aspiranteId,
         5,
+        'evaluador_claim',
       );
       expect(pruebaAspiranteRepo.find).not.toHaveBeenCalled();
       expect(result.readOnly).toBe(false);
@@ -247,6 +248,7 @@ describe('EvaluacionesService', () => {
       expect(evaluationFlowService.advanceOneStepIfAt).toHaveBeenCalledWith(
         aspiranteId,
         5,
+        'evaluador_claim',
       );
       expect(result.readOnly).toBe(false);
       expect(result.aspirante.evaluationFlowOrderId).toBe(6);
@@ -540,6 +542,7 @@ describe('EvaluacionesService', () => {
       expect(evaluationFlowService.setFlowStepToOrderId).toHaveBeenCalledWith(
         aspiranteId,
         10,
+        'informe_firmado',
       );
     });
 

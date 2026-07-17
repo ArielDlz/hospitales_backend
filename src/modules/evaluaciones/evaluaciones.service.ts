@@ -377,6 +377,7 @@ export class EvaluacionesService {
     const flowAdvance = await this.evaluationFlowService.setFlowStepToOrderId(
       aspiranteId,
       10,
+      'informe_firmado',
     );
 
     return {
@@ -466,6 +467,7 @@ export class EvaluacionesService {
     const advance = await this.evaluationFlowService.advanceOneStepIfAt(
       aspiranteId,
       6,
+      'evaluacion_confirmada',
     );
 
     return {
@@ -512,7 +514,11 @@ export class EvaluacionesService {
       }
 
       if (aspirante.evaluationFlowStep?.orderId === 5) {
-        await this.evaluationFlowService.advanceOneStepIfAt(aspiranteId, 5);
+        await this.evaluationFlowService.advanceOneStepIfAt(
+          aspiranteId,
+          5,
+          'evaluador_claim',
+        );
         aspirante = await this.loadAspiranteWithFlow(aspiranteId);
       }
 

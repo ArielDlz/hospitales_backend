@@ -304,7 +304,11 @@ export class PruebasService {
 
     try {
       const saved = await this.pruebaAspiranteRepository.save(entity);
-      await this.evaluationFlowService.advanceOneStepIfAt(aspirante.id, 3);
+      await this.evaluationFlowService.advanceOneStepIfAt(
+        aspirante.id,
+        3,
+        'createPruebaAspirante:primera_prueba_iniciada',
+      );
       return saved;
     } catch (error) {
       if (
@@ -463,7 +467,7 @@ export class PruebasService {
       select: ['tenantId'],
     });
     if (aspirante) {
-      await this.evaluationFlowService.tryAdvanceFromStep5(
+      await this.evaluationFlowService.tryAdvanceFromStep4(
         user.sub,
         aspirante.tenantId,
       );
@@ -1090,11 +1094,6 @@ export class PruebasService {
       );
       await this.pruebaRespuestaOpcionRepository.save(rows);
     }
-
-    await this.evaluationFlowService.tryAdvanceFromStep4(
-      user.sub,
-      dto.id_prueba_aspirante,
-    );
 
     return {
       message: 'respuesta guardada correctamente',

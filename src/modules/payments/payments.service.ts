@@ -140,7 +140,11 @@ export class PaymentsService {
         intent.currency,
       );
     } else {
-      await this.evaluationFlowService.advanceOneStepIfAt(user.sub, 2);
+      await this.evaluationFlowService.advanceOneStepIfAt(
+        user.sub,
+        2,
+        'payments:confirm',
+      );
     }
 
     const aspirante = await this.aspiranteRepository.findOne({
@@ -229,7 +233,11 @@ export class PaymentsService {
     }
 
     if (payment.status === PaymentStatus.Paid) {
-      await this.evaluationFlowService.advanceOneStepIfAt(aspiranteId, 2);
+      await this.evaluationFlowService.advanceOneStepIfAt(
+        aspiranteId,
+        2,
+        'payments:ensurePaidOrSync',
+      );
       return;
     }
 
@@ -257,7 +265,11 @@ export class PaymentsService {
     payment.paidAt = new Date();
     await this.paymentRepository.save(payment);
     if (payment.aspiranteId) {
-      await this.evaluationFlowService.advanceOneStepIfAt(payment.aspiranteId, 2);
+      await this.evaluationFlowService.advanceOneStepIfAt(
+        payment.aspiranteId,
+        2,
+        'payments:webhook_succeeded',
+      );
     }
   }
 

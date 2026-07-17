@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -16,6 +16,7 @@ import { Aspirante } from '../aspirante/aspirante.entity';
 import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { Hospital } from '../hospital/hospital.entity';
 import { MailModule } from '../mail/mail.module';
+import { AspiranteModule } from '../aspirante/aspirante.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { MailModule } from '../mail/mail.module';
       Hospital,
     ]),
     MailModule,
+    forwardRef(() => AspiranteModule),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
