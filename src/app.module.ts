@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
@@ -7,6 +7,7 @@ import * as Joi from 'joi';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
+import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { HospitalModule } from './modules/hospital/hospital.module';
 import { AspiranteModule } from './modules/aspirante/aspirante.module';
 import { UsuarioAdministrativoModule } from './modules/usuario-administrativo/usuario-administrativo.module';
@@ -89,4 +90,8 @@ import { SolicitudesAccesoModule } from './modules/solicitudes-acceso/solicitude
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}

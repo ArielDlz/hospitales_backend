@@ -578,7 +578,10 @@ export class AuthService {
     const previousOrderId = aspirante.evaluationFlowStep?.orderId ?? 1;
     const previousDescripcion =
       aspirante.evaluationFlowStep?.descripcion ?? '(sin paso)';
+    // Keep scalar FK and loaded relation in sync; otherwise TypeORM save()
+    // can persist the old evaluationFlowStep and leave the aspirante on step 1.
     aspirante.evaluationFlowId = pasoRegistrado.id;
+    aspirante.evaluationFlowStep = pasoRegistrado;
     await this.aspiranteRepository.save(aspirante);
 
     this.logger.log(
