@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
   ServiceUnavailableException,
   UnauthorizedException,
+  forwardRef,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +16,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Aspirante } from '../aspirante/aspirante.entity';
 import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
+import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Hospital } from '../hospital/hospital.entity';
@@ -93,6 +96,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
+    @Inject(forwardRef(() => EvaluationFlowService))
+    private readonly evaluationFlowService: EvaluationFlowService,
     @InjectRepository(UsuarioAdministrativo)
     private readonly usuarioRepository: Repository<UsuarioAdministrativo>,
     @InjectRepository(EvaluadorTenant)
@@ -499,6 +504,7 @@ export class AuthService {
       where: {
         primerAccesoToken: trimmedToken,
       },
+      relations: ['evaluationFlowStep'],
     });
 
     if (!aspirante) {
@@ -569,8 +575,17 @@ export class AuthService {
     aspirante.active = true;
     aspirante.primerAccesoToken = null;
     aspirante.primerAccesoExpira = null;
+    const previousOrderId = aspirante.evaluationFlowStep?.orderId ?? 1;
+    const previousDescripcion =
+      aspirante.evaluationFlowStep?.descripcion ?? '(sin paso)';
     aspirante.evaluationFlowId = pasoRegistrado.id;
     await this.aspiranteRepository.save(aspirante);
+
+    this.logger.log(
+      withReqId(
+        `[FLOW_STEP_CHANGE] aspiranteId=${aspirante.id} email=${aspirante.email} ${previousOrderId} ("${previousDescripcion}") → ${pasoRegistrado.orderId} ("${pasoRegistrado.descripcion}") reason=activar-cuenta`,
+      ),
+    );
 
     this.logger.log(
       withReqId(
@@ -605,15 +620,46 @@ export class AuthService {
       throw new BadRequestException('Aspirante o paso de flujo no encontrado');
     }
 
-    if (aspirante.evaluationFlowStep.orderId === 2) {
+    const currentOrderId = aspirante.evaluationFlowStep.orderId;
+    const currentDescripcion = aspirante.evaluationFlowStep.descripcion;
+
+    if (currentOrderId === 2) {
+      this.logger.warn(
+        withReqId(
+          `[FLOW_STEP_BLOCKED] aspiranteId=${aspirante.id} email=${aspirante.email} ${currentOrderId}→${currentOrderId + 1} reason=next-step detail=pago_pendiente`,
+        ),
+      );
       throw new BadRequestException('Debes completar el pago antes de continuar');
     }
 
-    const nextOrderId = aspirante.evaluationFlowStep.orderId + 1;
+    if (currentOrderId === 4) {
+      const allFinalized =
+        await this.evaluationFlowService.areAllEnabledPruebasFinalized(
+          aspirante.id,
+          aspirante.tenantId,
+        );
+      if (!allFinalized) {
+        this.logger.warn(
+          withReqId(
+            `[FLOW_STEP_BLOCKED] aspiranteId=${aspirante.id} email=${aspirante.email} 4→5 reason=next-step detail=pruebas_incompletas`,
+          ),
+        );
+        throw new BadRequestException(
+          'Debes finalizar todas las pruebas antes de continuar',
+        );
+      }
+    }
+
+    const nextOrderId = currentOrderId + 1;
     const nextStep = await this.evaluationFlowStepRepository.findOne({
       where: { orderId: nextOrderId },
     });
     if (!nextStep) {
+      this.logger.log(
+        withReqId(
+          `[FLOW_STEP] aspiranteId=${aspirante.id} email=${aspirante.email} skip reason=next-step detail=END_OF_FLOW order_id=${currentOrderId}`,
+        ),
+      );
       return { flowUpdated: false, reason: 'END_OF_FLOW' };
     }
 
@@ -626,6 +672,12 @@ export class AuthService {
         'No se pudo actualizar el paso de flujo del aspirante',
       );
     }
+
+    this.logger.log(
+      withReqId(
+        `[FLOW_STEP_CHANGE] aspiranteId=${aspirante.id} email=${aspirante.email} ${currentOrderId} ("${currentDescripcion}") → ${nextStep.orderId} ("${nextStep.descripcion}") reason=next-step`,
+      ),
+    );
 
     const hospital = await this.hospitalRepository.findOne({
       where: { uuid: aspirante.tenantId, active: true },
@@ -660,8 +712,15 @@ export class AuthService {
       throw new BadRequestException('Aspirante o paso de flujo no encontrado');
     }
 
-    const prevOrderId = aspirante.evaluationFlowStep.orderId - 1;
+    const currentOrderId = aspirante.evaluationFlowStep.orderId;
+    const currentDescripcion = aspirante.evaluationFlowStep.descripcion;
+    const prevOrderId = currentOrderId - 1;
     if (prevOrderId < 1) {
+      this.logger.log(
+        withReqId(
+          `[FLOW_STEP] aspiranteId=${aspirante.id} email=${aspirante.email} skip reason=previous-step detail=AT_BEGINNING order_id=${currentOrderId}`,
+        ),
+      );
       return { flowUpdated: false, reason: 'AT_BEGINNING' };
     }
 
@@ -683,6 +742,12 @@ export class AuthService {
         'No se pudo actualizar el paso de flujo del aspirante',
       );
     }
+
+    this.logger.log(
+      withReqId(
+        `[FLOW_STEP_CHANGE] aspiranteId=${aspirante.id} email=${aspirante.email} ${currentOrderId} ("${currentDescripcion}") → ${prevStep.orderId} ("${prevStep.descripcion}") reason=previous-step`,
+      ),
+    );
 
     const hospital = await this.hospitalRepository.findOne({
       where: { uuid: aspirante.tenantId, active: true },

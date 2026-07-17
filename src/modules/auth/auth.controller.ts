@@ -123,6 +123,11 @@ export class AuthController {
       'Avanzar un paso en el flujo (order_id + 1). Si no existe siguiente paso, no actualiza BD ni token (fin de flujo).',
   })
   @ApiOkResponse({ type: FlowStepNavigationResponseDto })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Pago pendiente (paso 2), o pruebas incompletas al intentar salir del paso 4',
+  })
   @ApiResponse({ status: 403, description: 'No es token de aspirante' })
   async nextFlowStep(@CurrentUser() user: JwtPayloadAspirante) {
     return this.authService.nextFlowStep(user);

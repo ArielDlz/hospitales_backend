@@ -119,10 +119,12 @@ El paso del aspirante se guarda en `aspirantes.evaluation_flow_id` (catálogo `e
 | 1 → 2 | Activar cuenta (`POST /auth/aspirante/activar-cuenta`) | Sí (nuevo token) |
 | 2 → 3 | Pago Stripe exitoso (`payment_intent.succeeded` vía webhook) | Sí (vía `POST /payments/confirm`) |
 | 3 → 4 | Al iniciar la primera prueba (`POST /pruebas/aspirantes`); también `POST /auth/aspirante/next-step` | Sí solo vía `next-step` |
-| 4 → 5 | Primera respuesta guardada en un intento (`POST /pruebas/aspirantes/respuestas`) mientras `order_id = 4` | No |
-| 5 → 6 | Tras `PATCH /pruebas/aspirantes/:id` con acción `"finalizada por el aspirante"`, cuando **todas** las pruebas habilitadas del hospital (`show=true`, prueba activa) tienen intento en `por_evaluar` o estado posterior | No |
+| 4 → 5 | Tras `PATCH /pruebas/aspirantes/:id` con acción `"finalizada por el aspirante"`, cuando **todas** las pruebas habilitadas del hospital (`show=true`, prueba activa) tienen intento en `por_evaluar` o estado posterior. `POST /auth/aspirante/next-step` en paso 4 exige la misma condición (si no, `400`) | Sí solo vía `next-step` |
+| 5 → 6 | Cuando un evaluador reclama/abre la evaluación del aspirante (también `next-step` si aplica) | Sí solo vía `next-step` |
 
-Los pasos 4→5 y 5→6 no reemiten JWT: el token del aspirante puede quedar con un `evaluationFlowOrderId` anterior; la fuente de verdad para reportes y listados admin es la base de datos (`GET /aspirantes` expone `evaluationFlowId` y `evaluationFlowDescripcion`).
+Los pasos 4→5 (vía finalizar prueba) y 5→6 (vía claim de evaluador) no reemiten JWT: el token del aspirante puede quedar con un `evaluationFlowOrderId` anterior; la fuente de verdad para reportes y listados admin es la base de datos (`GET /aspirantes` expone `evaluationFlowId` y `evaluationFlowDescripcion`).
+
+Cada cambio de paso se registra en logs con el prefijo `[FLOW_STEP_CHANGE]` (incluye `aspiranteId`, `email`, order_id origen/destino y `reason`). Bloqueos usan `[FLOW_STEP_BLOCKED]`.
 
 **Pago:** Monto y moneda desde el **Stripe Price** (`STRIPE_PRICE_ID`). Un aspirante en paso 2 no puede usar `next-step` hasta pagar. `POST /payments/intent` devuelve `productName`, `productDescription` y `amountCents` para la UI.
 

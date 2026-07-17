@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Aspirante } from './aspirante.entity';
 import { EvaluationFlowStep } from './evaluation-flow-step.entity';
@@ -8,7 +8,6 @@ import { AspiranteImportService } from './import/aspirante-import.service';
 import { EvaluationFlowService } from './evaluation-flow.service';
 import { HospitalModule } from '../hospital/hospital.module';
 import { MailModule } from '../mail/mail.module';
-import { PruebaRespuesta } from '../pruebas/entities/prueba-respuesta.entity';
 import { PruebaHospital } from '../pruebas/entities/prueba-hospital.entity';
 import { Prueba } from '../pruebas/entities/prueba.entity';
 import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
@@ -22,7 +21,6 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
     TypeOrmModule.forFeature([
       Aspirante,
       EvaluationFlowStep,
-      PruebaRespuesta,
       PruebaHospital,
       Prueba,
       PruebaAspirante,
@@ -30,7 +28,7 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
       Payment,
       AspiranteEvaluacion,
     ]),
-    HospitalModule,
+    forwardRef(() => HospitalModule),
     MailModule,
   ],
   controllers: [AspiranteController],

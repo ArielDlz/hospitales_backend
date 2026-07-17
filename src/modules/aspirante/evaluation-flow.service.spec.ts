@@ -3,7 +3,6 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { EvaluationFlowService } from './evaluation-flow.service';
 import { Aspirante } from './aspirante.entity';
 import { EvaluationFlowStep } from './evaluation-flow-step.entity';
-import { PruebaRespuesta } from '../pruebas/entities/prueba-respuesta.entity';
 import { PruebaHospital } from '../pruebas/entities/prueba-hospital.entity';
 import { Prueba } from '../pruebas/entities/prueba.entity';
 import {
@@ -20,9 +19,6 @@ describe('EvaluationFlowService', () => {
   };
   const flowStepRepo = {
     findOne: jest.fn(),
-  };
-  const respuestaRepo = {
-    count: jest.fn(),
   };
   const pruebaHospitalRepo = {
     find: jest.fn(),
@@ -49,10 +45,6 @@ describe('EvaluationFlowService', () => {
           useValue: flowStepRepo,
         },
         {
-          provide: getRepositoryToken(PruebaRespuesta),
-          useValue: respuestaRepo,
-        },
-        {
           provide: getRepositoryToken(PruebaHospital),
           useValue: pruebaHospitalRepo,
         },
@@ -71,7 +63,8 @@ describe('EvaluationFlowService', () => {
     it('no avanza si el aspirante no está en el order_id esperado', async () => {
       aspiranteRepo.findOne.mockResolvedValue({
         id: aspiranteId,
-        evaluationFlowStep: { orderId: 4, id: 40 },
+        email: 'a@test.com',
+        evaluationFlowStep: { orderId: 4, id: 40, descripcion: 'En evaluación' },
       });
 
       const result = await service.advanceOneStepIfAt(aspiranteId, 3);
@@ -83,7 +76,8 @@ describe('EvaluationFlowService', () => {
     it('no avanza si no existe el siguiente paso en catálogo', async () => {
       aspiranteRepo.findOne.mockResolvedValue({
         id: aspiranteId,
-        evaluationFlowStep: { orderId: 3, id: 30 },
+        email: 'a@test.com',
+        evaluationFlowStep: { orderId: 3, id: 30, descripcion: 'Pagado' },
       });
       flowStepRepo.findOne.mockResolvedValue(null);
 
@@ -96,9 +90,14 @@ describe('EvaluationFlowService', () => {
     it('avanza y actualiza evaluation_flow_id', async () => {
       aspiranteRepo.findOne.mockResolvedValue({
         id: aspiranteId,
-        evaluationFlowStep: { orderId: 3, id: 30 },
+        email: 'a@test.com',
+        evaluationFlowStep: { orderId: 3, id: 30, descripcion: 'Pagado' },
       });
-      flowStepRepo.findOne.mockResolvedValue({ orderId: 4, id: 40 });
+      flowStepRepo.findOne.mockResolvedValue({
+        orderId: 4,
+        id: 40,
+        descripcion: 'En evaluación',
+      });
       aspiranteRepo.update.mockResolvedValue({ affected: 1 });
 
       const result = await service.advanceOneStepIfAt(aspiranteId, 3);
@@ -115,9 +114,14 @@ describe('EvaluationFlowService', () => {
     it('actualiza evaluation_flow_id al paso indicado', async () => {
       aspiranteRepo.findOne.mockResolvedValue({
         id: aspiranteId,
-        evaluationFlowStep: { orderId: 7, id: 70 },
+        email: 'a@test.com',
+        evaluationFlowStep: { orderId: 7, id: 70, descripcion: 'Paso 7' },
       });
-      flowStepRepo.findOne.mockResolvedValue({ orderId: 10, id: 100 });
+      flowStepRepo.findOne.mockResolvedValue({
+        orderId: 10,
+        id: 100,
+        descripcion: 'Informe',
+      });
       aspiranteRepo.update.mockResolvedValue({ affected: 1 });
 
       const result = await service.setFlowStepToOrderId(aspiranteId, 10);
@@ -132,9 +136,14 @@ describe('EvaluationFlowService', () => {
     it('es idempotente si el aspirante ya está en el paso objetivo', async () => {
       aspiranteRepo.findOne.mockResolvedValue({
         id: aspiranteId,
-        evaluationFlowStep: { orderId: 10, id: 100 },
+        email: 'a@test.com',
+        evaluationFlowStep: { orderId: 10, id: 100, descripcion: 'Informe' },
       });
-      flowStepRepo.findOne.mockResolvedValue({ orderId: 10, id: 100 });
+      flowStepRepo.findOne.mockResolvedValue({
+        orderId: 10,
+        id: 100,
+        descripcion: 'Informe',
+      });
 
       const result = await service.setFlowStepToOrderId(aspiranteId, 10);
 
@@ -145,7 +154,8 @@ describe('EvaluationFlowService', () => {
     it('no avanza si el paso objetivo no existe en catálogo', async () => {
       aspiranteRepo.findOne.mockResolvedValue({
         id: aspiranteId,
-        evaluationFlowStep: { orderId: 7, id: 70 },
+        email: 'a@test.com',
+        evaluationFlowStep: { orderId: 7, id: 70, descripcion: 'Paso 7' },
       });
       flowStepRepo.findOne.mockResolvedValue(null);
 
@@ -157,37 +167,12 @@ describe('EvaluationFlowService', () => {
   });
 
   describe('tryAdvanceFromStep4', () => {
-    it('no avanza si no es la primera respuesta del intento', async () => {
-      respuestaRepo.count.mockResolvedValue(2);
-
-      const result = await service.tryAdvanceFromStep4(aspiranteId, 10);
-
-      expect(result).toEqual({ advanced: false });
-      expect(aspiranteRepo.findOne).not.toHaveBeenCalled();
-    });
-
-    it('avanza 4→5 en la primera respuesta del intento', async () => {
-      respuestaRepo.count.mockResolvedValue(1);
-      aspiranteRepo.findOne.mockResolvedValue({
-        id: aspiranteId,
-        evaluationFlowStep: { orderId: 4, id: 40 },
-      });
-      flowStepRepo.findOne.mockResolvedValue({ orderId: 5, id: 50 });
-      aspiranteRepo.update.mockResolvedValue({ affected: 1 });
-
-      const result = await service.tryAdvanceFromStep4(aspiranteId, 10);
-
-      expect(result).toEqual({ advanced: true, newOrderId: 5 });
-    });
-  });
-
-  describe('tryAdvanceFromStep5', () => {
     beforeEach(() => {
-      pruebaHospitalRepo.find.mockResolvedValue([{ idPrueba: 1 }, { idPrueba: 2 }]);
-      pruebaRepo.find.mockResolvedValue([
+      pruebaHospitalRepo.find.mockResolvedValue([
         { idPrueba: 1 },
         { idPrueba: 2 },
       ]);
+      pruebaRepo.find.mockResolvedValue([{ idPrueba: 1 }, { idPrueba: 2 }]);
     });
 
     it('no avanza si falta intento para alguna prueba habilitada', async () => {
@@ -195,7 +180,7 @@ describe('EvaluationFlowService', () => {
         { idPrueba: 1, status: ProcesoPrueba.PorEvaluar },
       ]);
 
-      const result = await service.tryAdvanceFromStep5(aspiranteId, tenantId);
+      const result = await service.tryAdvanceFromStep4(aspiranteId, tenantId);
 
       expect(result).toEqual({ advanced: false });
       expect(aspiranteRepo.update).not.toHaveBeenCalled();
@@ -207,9 +192,46 @@ describe('EvaluationFlowService', () => {
         { idPrueba: 2, status: ProcesoPrueba.Iniciada },
       ]);
 
-      const result = await service.tryAdvanceFromStep5(aspiranteId, tenantId);
+      const result = await service.tryAdvanceFromStep4(aspiranteId, tenantId);
 
       expect(result).toEqual({ advanced: false });
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('avanza 4→5 cuando todas las pruebas habilitadas están finalizadas', async () => {
+      pruebaAspiranteRepo.find.mockResolvedValue([
+        { idPrueba: 1, status: ProcesoPrueba.PorEvaluar },
+        { idPrueba: 2, status: ProcesoPrueba.PorEvaluar },
+      ]);
+      aspiranteRepo.findOne.mockResolvedValue({
+        id: aspiranteId,
+        email: 'a@test.com',
+        evaluationFlowStep: {
+          orderId: 4,
+          id: 40,
+          descripcion: 'En evaluación',
+        },
+      });
+      flowStepRepo.findOne.mockResolvedValue({
+        orderId: 5,
+        id: 50,
+        descripcion: 'Pruebas completadas',
+      });
+      aspiranteRepo.update.mockResolvedValue({ affected: 1 });
+
+      const result = await service.tryAdvanceFromStep4(aspiranteId, tenantId);
+
+      expect(result).toEqual({ advanced: true, newOrderId: 5 });
+    });
+  });
+
+  describe('tryAdvanceFromStep5', () => {
+    beforeEach(() => {
+      pruebaHospitalRepo.find.mockResolvedValue([
+        { idPrueba: 1 },
+        { idPrueba: 2 },
+      ]);
+      pruebaRepo.find.mockResolvedValue([{ idPrueba: 1 }, { idPrueba: 2 }]);
     });
 
     it('no avanza si no hay pruebas habilitadas', async () => {
@@ -227,14 +249,47 @@ describe('EvaluationFlowService', () => {
       ]);
       aspiranteRepo.findOne.mockResolvedValue({
         id: aspiranteId,
-        evaluationFlowStep: { orderId: 5, id: 50 },
+        email: 'a@test.com',
+        evaluationFlowStep: {
+          orderId: 5,
+          id: 50,
+          descripcion: 'Pruebas completadas',
+        },
       });
-      flowStepRepo.findOne.mockResolvedValue({ orderId: 6, id: 60 });
+      flowStepRepo.findOne.mockResolvedValue({
+        orderId: 6,
+        id: 60,
+        descripcion: 'En evaluación',
+      });
       aspiranteRepo.update.mockResolvedValue({ affected: 1 });
 
       const result = await service.tryAdvanceFromStep5(aspiranteId, tenantId);
 
       expect(result).toEqual({ advanced: true, newOrderId: 6 });
+    });
+  });
+
+  describe('areAllEnabledPruebasFinalized', () => {
+    it('devuelve false si falta algún intento', async () => {
+      pruebaHospitalRepo.find.mockResolvedValue([{ idPrueba: 1 }]);
+      pruebaRepo.find.mockResolvedValue([{ idPrueba: 1 }]);
+      pruebaAspiranteRepo.find.mockResolvedValue([]);
+
+      await expect(
+        service.areAllEnabledPruebasFinalized(aspiranteId, tenantId),
+      ).resolves.toBe(false);
+    });
+
+    it('devuelve true cuando todos los intentos están finalizados', async () => {
+      pruebaHospitalRepo.find.mockResolvedValue([{ idPrueba: 1 }]);
+      pruebaRepo.find.mockResolvedValue([{ idPrueba: 1 }]);
+      pruebaAspiranteRepo.find.mockResolvedValue([
+        { idPrueba: 1, status: ProcesoPrueba.PorEvaluar },
+      ]);
+
+      await expect(
+        service.areAllEnabledPruebasFinalized(aspiranteId, tenantId),
+      ).resolves.toBe(true);
     });
   });
 });

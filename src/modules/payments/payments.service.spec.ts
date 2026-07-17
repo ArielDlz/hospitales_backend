@@ -504,6 +504,7 @@ describe('PaymentsService', () => {
       expect(evaluationFlowService.advanceOneStepIfAt).toHaveBeenCalledWith(
         aspiranteId,
         2,
+        'payments:webhook_succeeded',
       );
     });
 
@@ -531,6 +532,7 @@ describe('PaymentsService', () => {
       expect(evaluationFlowService.advanceOneStepIfAt).toHaveBeenCalledWith(
         aspiranteId,
         2,
+        'payments:ensurePaidOrSync',
       );
     });
   });
