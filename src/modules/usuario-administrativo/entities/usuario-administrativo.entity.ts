@@ -45,6 +45,14 @@ export class UsuarioAdministrativo {
   @Column({ type: 'text', nullable: true, default: null })
   firma: string | null;
 
+  @Column({
+    type: 'text',
+    name: 'cedula_profesional',
+    nullable: true,
+    default: null,
+  })
+  cedulaProfesional: string | null;
+
   @OneToMany(() => EvaluadorTenant, (et) => et.usuario)
   tenantAssignments: EvaluadorTenant[];
 }

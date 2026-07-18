@@ -47,6 +47,7 @@ export class UsuarioAdministrativoService {
       | 'email'
       | 'nombre'
       | 'firma'
+      | 'cedulaProfesional'
       | 'rol'
       | 'isSuperuser'
       | 'active'
@@ -59,6 +60,7 @@ export class UsuarioAdministrativoService {
       email: usuario.email,
       nombre: usuario.nombre,
       firma: usuario.firma,
+      cedulaProfesional: usuario.cedulaProfesional,
       rol: usuario.rol,
       isSuperuser: usuario.isSuperuser,
       active: usuario.active,
@@ -83,6 +85,7 @@ export class UsuarioAdministrativoService {
         'email',
         'nombre',
         'firma',
+        'cedulaProfesional',
         'rol',
         'isSuperuser',
         'active',
@@ -147,6 +150,12 @@ export class UsuarioAdministrativoService {
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const nombre = dto.nombre.trim();
+    const firma =
+      dto.firma == null || dto.firma.trim() === '' ? null : dto.firma.trim();
+    const cedulaProfesional =
+      dto.cedulaProfesional == null || dto.cedulaProfesional.trim() === ''
+        ? null
+        : dto.cedulaProfesional.trim();
 
     const created = await this.dataSource.transaction(async (manager) => {
       const usuarioRepo = manager.getRepository(UsuarioAdministrativo);
@@ -157,6 +166,8 @@ export class UsuarioAdministrativoService {
           email,
           passwordHash,
           nombre,
+          firma,
+          cedulaProfesional,
           rol: RolUsuarioAdmin.Evaluador,
           isSuperuser: false,
           active: true,

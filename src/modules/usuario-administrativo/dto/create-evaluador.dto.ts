@@ -1,9 +1,10 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayNotEmpty,
   IsArray,
   IsEmail,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   MinLength,
@@ -35,6 +36,24 @@ export class CreateEvaluadorDto {
   @IsNotEmpty()
   @MinLength(8)
   password: string;
+
+  @ApiPropertyOptional({
+    example: 'https://bucket.s3.amazonaws.com/firmas/evaluador.png',
+    description: 'URL de la imagen de firma del evaluador',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  firma?: string | null;
+
+  @ApiPropertyOptional({
+    example: '12345678',
+    description: 'Cédula profesional del evaluador',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  cedulaProfesional?: string | null;
 
   @ApiProperty({
     example: ['550e8400-e29b-41d4-a716-446655440000'],
