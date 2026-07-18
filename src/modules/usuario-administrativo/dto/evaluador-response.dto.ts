@@ -21,6 +21,13 @@ export class EvaluadorResponseDto {
   })
   firma: string | null;
 
+  @ApiPropertyOptional({
+    example: '12345678',
+    description: 'Cédula profesional del evaluador',
+    nullable: true,
+  })
+  cedulaProfesional: string | null;
+
   @ApiProperty({ example: RolUsuarioAdmin.Evaluador, enum: RolUsuarioAdmin })
   rol: RolUsuarioAdmin;
 
