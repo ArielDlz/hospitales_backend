@@ -24,6 +24,8 @@ import {
 } from './informe-pdf.constants';
 import {
   formatFechaInformeEspanol,
+  formatFechaNacimientoParaInforme,
+  mapGeneroParaInforme,
   resolveResultadoPerfilKey,
   RESULTADO_PERFIL_OPTIONS,
 } from './informe-pdf.utils';
@@ -32,6 +34,9 @@ export interface InformePdfInput {
   nombre: string;
   apellidos: string;
   registroHospital: string;
+  especialidad?: string | null;
+  genero?: string | null;
+  fechaNacimiento?: string | Date | null;
   emailEvaluador: string;
   comentario: string;
   veredictoEtiqueta: string;
@@ -39,6 +44,7 @@ export interface InformePdfInput {
   fechaInforme?: Date;
   firmaUrl?: string;
   nombreFirmante?: string;
+  cedulaProfesional?: string | null;
 }
 
 @Injectable()
@@ -199,6 +205,34 @@ export class InformePdfService {
             align: 'center',
           });
 
+        const especialidad = data.especialidad?.trim() ?? '';
+        const generoLabel = mapGeneroParaInforme(data.genero);
+        const fechaNacimiento = formatFechaNacimientoParaInforme(
+          data.fechaNacimiento,
+        );
+
+        let detailY = doc.y + 8;
+        doc
+          .font('Helvetica')
+          .fontSize(10)
+          .fillColor(BRAND_COLOR)
+          .text(`Especialidad: ${especialidad}`, contentX, detailY, {
+            width: contentWidth,
+            align: 'left',
+          });
+
+        detailY = doc.y + 3;
+        doc.text(`Género: ${generoLabel}`, contentX, detailY, {
+          width: contentWidth,
+          align: 'left',
+        });
+
+        detailY = doc.y + 3;
+        doc.text(`Fecha de Nacimiento: ${fechaNacimiento}`, contentX, detailY, {
+          width: contentWidth,
+          align: 'left',
+        });
+
         const logoSize = Math.min(rightWidth - 12, 72);
         doc.image(
           logoBuffer,
@@ -297,7 +331,7 @@ export class InformePdfService {
         const signatureImageX =
           contentX + (contentWidth - signatureImageWidth) / 2;
 
-        ensureSpace(signatureImageHeight + 36);
+        ensureSpace(signatureImageHeight + 52);
         doc.image(firmaBuffer, signatureImageX, y, {
           fit: [signatureImageWidth, signatureImageHeight],
           align: 'center',
@@ -315,10 +349,21 @@ export class InformePdfService {
 
         y = signatureLineY + 8;
         doc
-          .font('Helvetica')
+          .font('Helvetica-Bold')
           .fontSize(10)
           .fillColor(BRAND_COLOR)
           .text(data.nombreFirmante, contentX, y, {
+            width: contentWidth,
+            align: 'center',
+          });
+
+        const cedula = data.cedulaProfesional?.trim() ?? '';
+        y = doc.y + 2;
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(10)
+          .fillColor(BRAND_COLOR)
+          .text(`Cédula profesional: ${cedula}`, contentX, y, {
             width: contentWidth,
             align: 'center',
           });

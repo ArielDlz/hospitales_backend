@@ -1,5 +1,7 @@
 import {
   formatFechaInformeEspanol,
+  formatFechaNacimientoParaInforme,
+  mapGeneroParaInforme,
   resolveResultadoPerfilKey,
 } from './informe-pdf.utils';
 
@@ -35,6 +37,25 @@ describe('informe-pdf.utils', () => {
       expect(
         formatFechaInformeEspanol(new Date(2025, 8, 18)),
       ).toBe('Informe elaborado el 18 de septiembre de 2025');
+    });
+  });
+
+  describe('mapGeneroParaInforme', () => {
+    it('mapea Hombre a Masculino y Mujer a Femenino', () => {
+      expect(mapGeneroParaInforme('Hombre')).toBe('Masculino');
+      expect(mapGeneroParaInforme('Mujer')).toBe('Femenino');
+      expect(mapGeneroParaInforme('hombre')).toBe('Masculino');
+      expect(mapGeneroParaInforme(null)).toBe('');
+    });
+  });
+
+  describe('formatFechaNacimientoParaInforme', () => {
+    it('conserva YYYY-MM-DD', () => {
+      expect(formatFechaNacimientoParaInforme('1988-05-27')).toBe('1988-05-27');
+      expect(formatFechaNacimientoParaInforme('1988-05-27T00:00:00.000Z')).toBe(
+        '1988-05-27',
+      );
+      expect(formatFechaNacimientoParaInforme(null)).toBe('');
     });
   });
 });
