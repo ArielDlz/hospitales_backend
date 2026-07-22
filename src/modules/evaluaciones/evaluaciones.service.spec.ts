@@ -86,8 +86,8 @@ describe('EvaluacionesService', () => {
   };
   const s3Storage = {
     uploadBuffer: jest.fn().mockResolvedValue({
-      key: 'informes-firmados/REG-001 - Juan García - Hospital General.pdf',
-      url: 'https://bucket.s3.amazonaws.com/informes-firmados/REG-001 - Juan García - Hospital General.pdf',
+      key: 'informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+      url: 'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
     }),
   };
   const dataSource = {
@@ -154,6 +154,7 @@ describe('EvaluacionesService', () => {
     apellidos: 'García',
     email: 'asp@example.com',
     registroHospital: 'REG-001',
+    documento: 'PEGJ880527HDFRRL09',
     especialidad: 'Cardiología',
     genero: 'Hombre',
     fechaNacimiento: '1995-03-15',
@@ -635,13 +636,13 @@ describe('EvaluacionesService', () => {
       expect(s3Storage.uploadBuffer).toHaveBeenCalledWith({
         buffer: expect.any(Buffer),
         contentType: 'application/pdf',
-        key: 'informes-firmados/REG-001 - Juan García - Hospital General.pdf',
+        key: 'informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
       });
       expect(aspiranteRepo.update).toHaveBeenCalledWith(
         { id: aspiranteId },
         {
           veredictoInforme:
-            'https://bucket.s3.amazonaws.com/informes-firmados/REG-001 - Juan García - Hospital General.pdf',
+            'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
         },
       );
       expect(result.message).toBe('Informe firmado correctamente');
@@ -656,13 +657,13 @@ describe('EvaluacionesService', () => {
 
     it('permite re-firmar y sobrescribir veredicto_informe', async () => {
       s3Storage.uploadBuffer.mockResolvedValueOnce({
-        key: 'informes-firmados/REG-001 - Juan García - Hospital General.pdf',
+        key: 'informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
         url: 'https://bucket.s3.amazonaws.com/informes-firmados/v1.pdf',
       });
       await service.firmarInforme(aspiranteId, adminUser);
 
       s3Storage.uploadBuffer.mockResolvedValueOnce({
-        key: 'informes-firmados/REG-001 - Juan García - Hospital General.pdf',
+        key: 'informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
         url: 'https://bucket.s3.amazonaws.com/informes-firmados/v2.pdf',
       });
       const result = await service.firmarInforme(aspiranteId, adminUser);
@@ -722,7 +723,7 @@ describe('EvaluacionesService', () => {
     const aspiranteStep10 = {
       ...aspiranteStep6AssignedA,
       veredictoInforme:
-        'https://bucket.s3.amazonaws.com/informes-firmados/REG-001%20-%20Juan%20Garc%C3%ADa%20-%20Hospital%20General.pdf',
+        'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
       evaluationFlowStep: { orderId: 10, descripcion: 'Informe firmado' },
     };
     const originalFetch = global.fetch;
@@ -744,7 +745,13 @@ describe('EvaluacionesService', () => {
 
     it('descarga el PDF firmado con el mismo nombre usado al subir a S3', async () => {
       aspiranteRepo.findOne.mockResolvedValue(aspiranteStep10);
-      hospitalRepo.findOne.mockResolvedValue({ nombre: 'Hospital General' });
+      aspiranteEvaluacionRepo.findOne.mockResolvedValue({
+        idVeredicto: 1,
+      });
+      veredictoRepo.findOne.mockResolvedValue({
+        codigo: 'apto',
+        etiqueta: 'Apto',
+      });
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => Buffer.from('%PDF-1.4 signed'),
@@ -754,12 +761,17 @@ describe('EvaluacionesService', () => {
 
       expect(global.fetch).toHaveBeenCalledWith(aspiranteStep10.veredictoInforme);
       expect(result.buffer.toString()).toContain('%PDF');
-      expect(result.filename).toBe('REG-001 - Juan García - Hospital General.pdf');
+      expect(result.filename).toBe('PEGJ880527HDFRRL09_1_A_25_2027.pdf');
     });
 
-    it('usa el nombre del URL si no hay hospital en catálogo', async () => {
-      aspiranteRepo.findOne.mockResolvedValue(aspiranteStep10);
-      hospitalRepo.findOne.mockResolvedValue(null);
+    it('usa el nombre del URL si el aspirante no tiene documento (CURP)', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteStep10,
+        documento: null,
+        veredictoInforme:
+          'https://bucket.s3.amazonaws.com/informes-firmados/legacy-name.pdf',
+      });
+      aspiranteEvaluacionRepo.findOne.mockResolvedValue(null);
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => Buffer.from('%PDF-1.4 signed'),
@@ -767,7 +779,7 @@ describe('EvaluacionesService', () => {
 
       const result = await service.downloadInformeFirmado(aspiranteId, adminUser);
 
-      expect(result.filename).toBe('REG-001 - Juan García - Hospital General.pdf');
+      expect(result.filename).toBe('legacy-name.pdf');
     });
   });
 
