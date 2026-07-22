@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Aspirante } from '../aspirante.entity';
@@ -84,7 +84,7 @@ export class AspiranteImportService {
         const token = crypto.randomBytes(32).toString('hex');
         const aspirante = repo.create({
           tenantId: ctx.hospital.uuid,
-          email: row.email,
+          email: row.email.trim().toLowerCase(),
           registroHospital: row.registroHospital.trim(),
           passwordHash,
           apellidos: row.apellidos.trim(),
@@ -236,7 +236,7 @@ export class AspiranteImportService {
       }
 
       if (row.email.trim() && row.registroHospital.trim()) {
-        const key = `${row.email}|${row.registroHospital.trim()}`;
+        const key = `${row.email.trim().toLowerCase()}|${row.registroHospital.trim()}`;
         const firstRow = seenKeys.get(key);
         if (firstRow != null) {
           addError(
@@ -253,20 +253,19 @@ export class AspiranteImportService {
     const candidateKeys = parsed.rows
       .filter((r) => r.email.trim() && r.registroHospital.trim())
       .map((r) => ({
-        email: r.email,
+        email: r.email.trim().toLowerCase(),
         registroHospital: r.registroHospital.trim(),
         rowNumber: r.rowNumber,
       }));
 
     if (candidateKeys.length > 0) {
       const emails = [...new Set(candidateKeys.map((c) => c.email))];
-      const existing = await this.aspiranteRepository.find({
-        where: {
-          tenantId: hospital.uuid,
-          email: In(emails),
-        },
-        select: ['email', 'registroHospital'],
-      });
+      const existing = await this.aspiranteRepository
+        .createQueryBuilder('a')
+        .select(['a.email', 'a.registroHospital'])
+        .where('a.tenant_id = :tenantId', { tenantId: hospital.uuid })
+        .andWhere('LOWER(a.email) IN (:...emails)', { emails })
+        .getMany();
 
       const existingSet = new Set(
         existing.map(
