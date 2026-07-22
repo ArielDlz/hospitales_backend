@@ -1,15 +1,26 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { UsuarioAdministrativoService } from './usuario-administrativo.service';
 import { CreateEvaluadorDto } from './dto/create-evaluador.dto';
+import { UpdateEvaluadorSupervisorDto } from './dto/update-evaluador-supervisor.dto';
 import { EvaluadorResponseDto } from './dto/evaluador-response.dto';
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -68,5 +79,32 @@ export class UsuarioAdministrativoController {
     @CurrentUser() user: JwtPayloadAdmin,
   ): Promise<EvaluadorResponseDto> {
     return this.usuarioAdministrativoService.createEvaluador(dto, user);
+  }
+
+  @Patch('evaluadores/:id')
+  @UseGuards(AdminOnlyGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Actualizar supervisor del evaluador (solo administrador). null quita el supervisor.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del evaluador' })
+  @ApiOkResponse({
+    description: 'Evaluador actualizado con supervisorId',
+    type: EvaluadorResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Supervisor inválido' })
+  @ApiResponse({ status: 403, description: 'No es administrador' })
+  @ApiResponse({ status: 404, description: 'Evaluador no encontrado' })
+  async updateEvaluadorSupervisor(
+    @Param('id') id: string,
+    @Body() dto: UpdateEvaluadorSupervisorDto,
+    @CurrentUser() user: JwtPayloadAdmin,
+  ): Promise<EvaluadorResponseDto> {
+    return this.usuarioAdministrativoService.updateEvaluadorSupervisor(
+      id,
+      dto,
+      user,
+    );
   }
 }

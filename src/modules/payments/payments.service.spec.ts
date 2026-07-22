@@ -13,6 +13,7 @@ import { Hospital } from '../hospital/hospital.entity';
 import { AuthService } from '../auth/auth.service';
 import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 import type { JwtPayloadAspirante } from '../../common/interfaces/jwt-payload.interface';
+import { MSG_ACCESO_FINALIZADO } from '../hospital/tenant-access-window';
 
 const PAYMENT_AMOUNT_CENTS = 200_000;
 const STRIPE_PRICE_ID = 'price_test';
@@ -196,6 +197,10 @@ describe('PaymentsService', () => {
     mockPricesRetrieve.mockResolvedValue(stripeCatalog);
     mockCustomersCreate.mockResolvedValue({ id: 'cus_test' });
     mockCustomersUpdate.mockResolvedValue({ id: 'cus_existing' });
+    hospitalRepo.findOne.mockResolvedValue({
+      slug: 'hospital-general',
+      accesoCierraAt: null,
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -470,6 +475,34 @@ describe('PaymentsService', () => {
         ConflictException,
       );
     });
+
+    it('tras cierre cancela PaymentIntent impago y responde 403', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({ ...aspiranteAtPaymentStep });
+      const existing = {
+        id: 'pay-1',
+        aspiranteId,
+        tenantId,
+        status: PaymentStatus.Pending,
+        stripePaymentIntentId: 'pi_open',
+      };
+      paymentRepo.findOne.mockResolvedValue(existing);
+      hospitalRepo.findOne.mockResolvedValue({
+        accesoCierraAt: new Date(Date.now() - 60_000),
+      });
+      mockPaymentIntentsCancel.mockResolvedValue({
+        id: 'pi_open',
+        status: 'canceled',
+      });
+
+      await expect(service.createPaymentIntent(user)).rejects.toThrow(
+        MSG_ACCESO_FINALIZADO,
+      );
+      expect(mockPaymentIntentsCancel).toHaveBeenCalledWith('pi_open');
+      expect(paymentRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: PaymentStatus.Canceled }),
+      );
+      expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleWebhook', () => {
@@ -544,9 +577,42 @@ describe('PaymentsService', () => {
         status: 'requires_action',
         metadata: { aspiranteId, tenantId },
       });
+      paymentRepo.findOne.mockResolvedValue(null);
+      hospitalRepo.findOne.mockResolvedValue({ accesoCierraAt: null });
 
       await expect(service.confirmPayment(user, 'pi_test')).rejects.toThrow(
         BadRequestException,
+      );
+    });
+
+    it('tras cierre rechaza confirm no succeeded y cancela intent impago', async () => {
+      mockPaymentIntentsRetrieve.mockResolvedValue({
+        id: 'pi_open',
+        status: 'requires_payment_method',
+        metadata: { aspiranteId, tenantId },
+      });
+      const existing = {
+        id: 'pay-1',
+        aspiranteId,
+        tenantId,
+        status: PaymentStatus.Pending,
+        stripePaymentIntentId: 'pi_open',
+      };
+      paymentRepo.findOne.mockResolvedValue(existing);
+      hospitalRepo.findOne.mockResolvedValue({
+        accesoCierraAt: new Date(Date.now() - 60_000),
+      });
+      mockPaymentIntentsCancel.mockResolvedValue({
+        id: 'pi_open',
+        status: 'canceled',
+      });
+
+      await expect(service.confirmPayment(user, 'pi_open')).rejects.toThrow(
+        MSG_ACCESO_FINALIZADO,
+      );
+      expect(mockPaymentIntentsCancel).toHaveBeenCalledWith('pi_open');
+      expect(paymentRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: PaymentStatus.Canceled }),
       );
     });
 
@@ -572,7 +638,10 @@ describe('PaymentsService', () => {
         registroHospital: 'REG-001',
         evaluationFlowStep: { orderId: 3, descripcion: 'Pagado' },
       });
-      hospitalRepo.findOne.mockResolvedValue({ slug: 'hospital-general' });
+      hospitalRepo.findOne.mockResolvedValue({
+        slug: 'hospital-general',
+        accesoCierraAt: null,
+      });
 
       const result = await service.confirmPayment(user, 'pi_test');
 
@@ -583,6 +652,40 @@ describe('PaymentsService', () => {
         evaluationFlowOrderId: 3,
       });
       expect(authService.issueAspiranteAccessToken).toHaveBeenCalled();
+    });
+
+    it('honra confirm succeeded aunque el tenant ya cerró', async () => {
+      mockPaymentIntentsRetrieve.mockResolvedValue({
+        id: 'pi_late',
+        status: 'succeeded',
+        amount: PAYMENT_AMOUNT_CENTS,
+        currency: 'mxn',
+        metadata: { aspiranteId, tenantId },
+      });
+      paymentRepo.findOne.mockResolvedValue({
+        id: 'pay-1',
+        aspiranteId,
+        tenantId,
+        status: PaymentStatus.Pending,
+      });
+      aspiranteRepo.findOne.mockResolvedValue({
+        id: aspiranteId,
+        tenantId,
+        nombre: 'Juan',
+        apellidos: 'Pérez',
+        registroHospital: 'REG-001',
+        evaluationFlowStep: { orderId: 3, descripcion: 'Pagado' },
+      });
+      hospitalRepo.findOne.mockResolvedValue({
+        slug: 'hospital-general',
+        accesoCierraAt: new Date(Date.now() - 60_000),
+      });
+
+      const result = await service.confirmPayment(user, 'pi_late');
+
+      expect(result.paid).toBe(true);
+      expect(evaluationFlowService.advanceOneStepIfAt).toHaveBeenCalled();
+      expect(mockPaymentIntentsCancel).not.toHaveBeenCalled();
     });
   });
 });

@@ -17,7 +17,7 @@ export class CreateEvaluadorDto {
   })
   @IsString()
   @IsNotEmpty()
-  nombre: string;
+  nombre!: string;
 
   @ApiProperty({
     example: 'evaluador@hospital.com',
@@ -25,7 +25,7 @@ export class CreateEvaluadorDto {
   })
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @ApiProperty({
     example: 'SecurePass123',
@@ -35,7 +35,7 @@ export class CreateEvaluadorDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(8)
-  password: string;
+  password!: string;
 
   @ApiPropertyOptional({
     example: 'https://bucket.s3.amazonaws.com/firmas/evaluador.png',
@@ -63,5 +63,5 @@ export class CreateEvaluadorDto {
   @IsArray()
   @ArrayNotEmpty()
   @IsUUID('4', { each: true })
-  tenantIds: string[];
+  tenantIds!: string[];
 }

@@ -7,6 +7,10 @@ export interface JwtPayloadAdmin {
   tenants?: string[];
   /** true si el usuario tiene firma (URL no vacía) en la base de datos */
   signature: boolean;
+  /** UUID del supervisor (evaluadores); null si no aplica */
+  supervisorId: string | null;
+  /** IDs de evaluadores que este usuario supervisa (vacío si ninguno) */
+  supervisedUserIds: string[];
   iat?: number;
   exp?: number;
 }

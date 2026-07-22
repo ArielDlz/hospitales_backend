@@ -24,6 +24,7 @@ describe('AspiranteImportService', () => {
 
   const aspiranteRepo = {
     find: jest.fn(),
+    createQueryBuilder: jest.fn(),
   };
   const flowStepRepo = {
     findOne: jest.fn(),
@@ -41,6 +42,19 @@ describe('AspiranteImportService', () => {
   const dataSource = {
     transaction: jest.fn(),
   };
+
+  function mockExistingAspirantes(
+    rows: Array<{ email: string; registroHospital: string }>,
+  ) {
+    const qb = {
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(rows),
+    };
+    aspiranteRepo.createQueryBuilder.mockReturnValue(qb);
+    return qb;
+  }
 
   async function buildWorkbook(
     rows: Array<Record<string, string>>,
@@ -73,7 +87,7 @@ describe('AspiranteImportService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     hospitalService.findByUuid.mockResolvedValue(hospital);
-    aspiranteRepo.find.mockResolvedValue([]);
+    mockExistingAspirantes([]);
     flowStepRepo.findOne.mockResolvedValue({ id: 1, orderId: 1 });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -122,13 +136,38 @@ describe('AspiranteImportService', () => {
   });
 
   it('validate reports DB duplicates', async () => {
-    aspiranteRepo.find.mockResolvedValue([
+    mockExistingAspirantes([
       { email: 'juan@example.com', registroHospital: 'REG-1' },
     ]);
     const buffer = await buildWorkbook([baseRow]);
     const report = await service.validate(buffer, hospital.uuid);
     expect(report.ok).toBe(false);
     expect(report.errors[0].messages[0]).toContain('Ya existe un aspirante');
+  });
+
+  it('validate detects DB duplicates case-insensitively', async () => {
+    mockExistingAspirantes([
+      { email: 'Juan@Example.com', registroHospital: 'REG-1' },
+    ]);
+    const buffer = await buildWorkbook([
+      { ...baseRow, email: 'JUAN@example.com' },
+    ]);
+    const report = await service.validate(buffer, hospital.uuid);
+    expect(report.ok).toBe(false);
+    expect(report.errors[0].messages[0]).toContain('Ya existe un aspirante');
+    expect(aspiranteRepo.createQueryBuilder).toHaveBeenCalled();
+  });
+
+  it('validate detects in-file duplicates with different email casing', async () => {
+    const buffer = await buildWorkbook([
+      baseRow,
+      { ...baseRow, email: 'Juan@Example.com' },
+    ]);
+    const report = await service.validate(buffer, hospital.uuid);
+    expect(report.ok).toBe(false);
+    expect(
+      report.errors.some((e) => e.messages.some((m) => m.includes('Duplicado'))),
+    ).toBe(true);
   });
 
   it('import throws BadRequestException with report when invalid', async () => {
@@ -165,6 +204,28 @@ describe('AspiranteImportService', () => {
     expect((saved[0] as { genero: string }).genero).toBe(GeneroAspirante.Hombre);
     expect((saved[1] as { genero: string }).genero).toBe(GeneroAspirante.Mujer);
     expect(mailService.sendPrimerAccesoEmail).not.toHaveBeenCalled();
+  });
+
+  it('import lowercases emails before saving', async () => {
+    const saved: unknown[] = [];
+    dataSource.transaction.mockImplementation(async (cb: (m: unknown) => Promise<void>) => {
+      const repo = {
+        create: jest.fn((data: Record<string, unknown>) => data),
+        save: jest.fn(async (entity: Record<string, unknown>) => {
+          const withId = { ...entity, id: `id-${saved.length}` };
+          saved.push(withId);
+          return withId;
+        }),
+      };
+      await cb({ getRepository: () => repo });
+    });
+
+    const buffer = await buildWorkbook([
+      { ...baseRow, email: 'Juan.Perez@Example.COM' },
+    ]);
+    const report = await service.import(buffer, hospital.uuid);
+    expect(report.ok).toBe(true);
+    expect((saved[0] as { email: string }).email).toBe('juan.perez@example.com');
   });
 
   it('import sends emails when hospital flag is true', async () => {

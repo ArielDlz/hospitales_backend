@@ -105,6 +105,28 @@ describe('aspirante-import.parser', () => {
       expect(parsed.rows[0].documento).toBe('CURP1');
     });
 
+    it('lowercases email from the sheet', async () => {
+      const buffer = await buildWorkbook([
+        {
+          registro_hospital: 'REG-1',
+          documento: '',
+          especialidad: '',
+          modalidad: '',
+          nacionalidad: '',
+          apellidos: 'García',
+          nombre: 'Juan',
+          fecha_nacimiento: '',
+          genero: 'H',
+          email: 'Juan.Perez@Example.COM',
+          rfc: '',
+          telefono: '',
+        },
+      ]);
+
+      const parsed = await parseAspiranteImportBuffer(buffer);
+      expect(parsed.rows[0].email).toBe('juan.perez@example.com');
+    });
+
     it('collects parse errors for invalid genero', async () => {
       const buffer = await buildWorkbook([
         {

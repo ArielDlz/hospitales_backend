@@ -108,21 +108,43 @@ describe('EvaluacionesService', () => {
 
   const adminUser = {
     sub: 'admin-uuid',
+    type: 'admin' as const,
     rol: RolUsuarioAdmin.Administrador,
     tenants: [],
     signature: true,
+    supervisorId: null as string | null,
+    supervisedUserIds: [] as string[],
   };
 
   const evaluadorA = {
     sub: evaluadorAId,
+    type: 'admin' as const,
     rol: RolUsuarioAdmin.Evaluador,
     tenants: [tenantId],
+    signature: false,
+    supervisorId: null as string | null,
+    supervisedUserIds: [] as string[],
   };
 
   const evaluadorB = {
     sub: evaluadorBId,
+    type: 'admin' as const,
     rol: RolUsuarioAdmin.Evaluador,
     tenants: [tenantId],
+    signature: false,
+    supervisorId: null as string | null,
+    supervisedUserIds: [] as string[],
+  };
+
+  const supervisorId = 'eval-uuid-supervisor';
+  const supervisorUser = {
+    sub: supervisorId,
+    type: 'admin' as const,
+    rol: RolUsuarioAdmin.Evaluador,
+    tenants: [] as string[],
+    signature: true,
+    supervisorId: null as string | null,
+    supervisedUserIds: [evaluadorAId],
   };
 
   const aspiranteStep5 = {
@@ -210,10 +232,41 @@ describe('EvaluacionesService', () => {
       aspiranteRepo.findOne.mockResolvedValue({
         ...aspiranteStep6AssignedA,
       });
+      usuarioRepo.findOne.mockResolvedValue({ supervisorId: null });
 
       await expect(
         service.asignarEvaluacion(aspiranteId, evaluadorB),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('permite supervisor del asignado en modo readOnly sin tenant', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteStep6AssignedA,
+      });
+      usuarioRepo.findOne.mockImplementation(
+        async (opts: { where: { id: string }; select?: string[] }) => {
+          if (
+            opts.where.id === evaluadorAId &&
+            opts.select?.includes('supervisorId')
+          ) {
+            return { supervisorId };
+          }
+          if (opts.where.id === evaluadorAId) {
+            return { email: 'evaluador-a@hospital.com' };
+          }
+          return null;
+        },
+      );
+
+      const result = await service.asignarEvaluacion(
+        aspiranteId,
+        supervisorUser,
+      );
+
+      expect(result.readOnly).toBe(true);
+      expect(result.message).toBe('Acceso de solo lectura');
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+      expect(evaluationFlowService.advanceOneStepIfAt).not.toHaveBeenCalled();
     });
 
     it('permite admin en modo readOnly sin asignar ni avanzar paso', async () => {
@@ -259,10 +312,38 @@ describe('EvaluacionesService', () => {
       aspiranteRepo.findOne.mockResolvedValue({
         ...aspiranteStep6AssignedA,
       });
+      usuarioRepo.findOne.mockResolvedValue({ supervisorId: null });
 
       await expect(
         service.getWorkspace(aspiranteId, evaluadorB),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('permite supervisor del asignado en modo readOnly sin tenant', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteStep6AssignedA,
+      });
+      usuarioRepo.findOne.mockImplementation(
+        async (opts: { where: { id: string }; select?: string[] }) => {
+          if (
+            opts.where.id === evaluadorAId &&
+            opts.select?.includes('supervisorId')
+          ) {
+            return { supervisorId };
+          }
+          if (opts.where.id === evaluadorAId) {
+            return { email: 'evaluador-a@hospital.com' };
+          }
+          return null;
+        },
+      );
+
+      const result = await service.getWorkspace(aspiranteId, supervisorUser);
+
+      expect(result.readOnly).toBe(true);
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+      expect(evaluationFlowService.advanceOneStepIfAt).not.toHaveBeenCalled();
+      expect(result.evaluadorAsignadoEmail).toBe('evaluador-a@hospital.com');
     });
 
     it('permite admin en modo readOnly sin avanzar paso', async () => {
@@ -563,6 +644,48 @@ describe('EvaluacionesService', () => {
       expect(result.veredictoInforme).toBe(
         'https://bucket.s3.amazonaws.com/informes-firmados/v2.pdf',
       );
+    });
+
+    it('permite al supervisor firmar sin tenant del aspirante', async () => {
+      usuarioRepo.findOne.mockImplementation(
+        async (opts: { where: { id: string }; select?: string[] }) => {
+          if (
+            opts.where.id === evaluadorAId &&
+            opts.select?.includes('supervisorId')
+          ) {
+            return { supervisorId };
+          }
+          if (opts.where.id === supervisorId) {
+            return {
+              nombre: 'Supervisor Firmante',
+              firma: 'https://example.com/firma-sup.png',
+              email: 'supervisor@hospital.com',
+            };
+          }
+          if (opts.where.id === evaluadorAId) {
+            return { email: 'evaluador-a@hospital.com' };
+          }
+          return null;
+        },
+      );
+
+      const result = await service.firmarInforme(aspiranteId, supervisorUser);
+
+      expect(informePdfService.buildPdf).toHaveBeenCalledWith(
+        expect.objectContaining({
+          firmaUrl: 'https://example.com/firma-sup.png',
+          nombreFirmante: 'Supervisor Firmante',
+        }),
+      );
+      expect(result.message).toBe('Informe firmado correctamente');
+    });
+
+    it('rechaza evaluador no asignado ni supervisor', async () => {
+      usuarioRepo.findOne.mockResolvedValue({ supervisorId: null });
+
+      await expect(
+        service.firmarInforme(aspiranteId, evaluadorB),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

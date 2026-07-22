@@ -21,6 +21,8 @@ import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuari
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Hospital } from '../hospital/hospital.entity';
 import {
+  assertLoginAllowedAfterClose,
+  assertTenantAccessOpened,
   assertTenantAccessWindow,
   resolveAspiranteJwtExpiresIn,
 } from '../hospital/tenant-access-window';
@@ -113,7 +115,15 @@ export class AuthService {
   async loginAdmin(dto: AdminLoginDto): Promise<{ accessToken: string; expiresIn: string }> {
     const usuario = await this.usuarioRepository.findOne({
       where: { email: dto.email.toLowerCase(), active: true },
-      select: ['id', 'email', 'passwordHash', 'rol', 'isSuperuser', 'firma'],
+      select: [
+        'id',
+        'email',
+        'passwordHash',
+        'rol',
+        'isSuperuser',
+        'firma',
+        'supervisorId',
+      ],
     });
 
     const passwordToCheck = usuario?.passwordHash ?? DUMMY_HASH;
@@ -133,12 +143,19 @@ export class AuthService {
       tenants = assignments.length > 0 ? assignments.map((a) => a.tenantId) : undefined;
     }
 
+    const supervisees = await this.usuarioRepository.find({
+      where: { supervisorId: usuario.id },
+      select: ['id'],
+    });
+
     const payload: JwtPayloadAdmin = {
       sub: usuario.id,
       type: 'admin',
       rol: usuario.rol,
       tenants,
       signature: usuario.firma != null && usuario.firma !== '',
+      supervisorId: usuario.supervisorId ?? null,
+      supervisedUserIds: supervisees.map((s) => s.id),
     };
 
     const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN', '7d');
@@ -160,7 +177,7 @@ export class AuthService {
       throw new UnauthorizedException(CREDENTIALS_ERROR);
     }
 
-    assertTenantAccessWindow(hospital);
+    assertTenantAccessOpened(hospital);
 
     const aspirante = await this.aspiranteRepository.findOne({
       where: {
@@ -185,6 +202,11 @@ export class AuthService {
       );
     }
 
+    assertLoginAllowedAfterClose(
+      hospital,
+      aspirante.evaluationFlowStep.orderId,
+    );
+
     return this.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
@@ -195,7 +217,7 @@ export class AuthService {
 
   /**
    * Firma un JWT de aspirante con order_id y descripción del paso actual.
-   * TTL: 1d while tenant access is open (or no close date); 1h after close.
+   * TTL: always 1d (soft-close does not shorten sessions).
    * Reutilizar tras login, activar cuenta, avanzar/retroceder paso, etc.
    */
   issueAspiranteAccessToken(params: {
@@ -218,9 +240,7 @@ export class AuthService {
       evaluationFlowOrderId: params.flowStep.orderId,
       evaluationFlowDescripcion: params.flowStep.descripcion,
     };
-    const expiresIn = resolveAspiranteJwtExpiresIn({
-      accesoCierraAt: params.accesoCierraAt,
-    });
+    const expiresIn = resolveAspiranteJwtExpiresIn();
     const accessToken = this.jwtService.sign(payload, { expiresIn });
     return { accessToken, expiresIn };
   }
