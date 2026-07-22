@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
@@ -11,6 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { UsuarioAdministrativo } from './entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from './entities/evaluador-tenant.entity';
 import { CreateEvaluadorDto } from './dto/create-evaluador.dto';
+import { UpdateEvaluadorSupervisorDto } from './dto/update-evaluador-supervisor.dto';
 import { EvaluadorResponseDto } from './dto/evaluador-response.dto';
 import { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
@@ -51,6 +53,7 @@ export class UsuarioAdministrativoService {
       | 'rol'
       | 'isSuperuser'
       | 'active'
+      | 'supervisorId'
       | 'createdAt'
     >,
     tenantIds: string[],
@@ -65,6 +68,7 @@ export class UsuarioAdministrativoService {
       isSuperuser: usuario.isSuperuser,
       active: usuario.active,
       tenantIds,
+      supervisorId: usuario.supervisorId ?? null,
       createdAt: usuario.createdAt,
     };
   }
@@ -89,6 +93,7 @@ export class UsuarioAdministrativoService {
         'rol',
         'isSuperuser',
         'active',
+        'supervisorId',
         'createdAt',
       ],
       order: { createdAt: 'DESC' },
@@ -215,5 +220,87 @@ export class UsuarioAdministrativoService {
     }
 
     return { ...created, emailEnviado };
+  }
+
+  async updateEvaluadorSupervisor(
+    evaluadorId: string,
+    dto: UpdateEvaluadorSupervisorDto,
+    user: JwtPayloadAdmin,
+  ): Promise<EvaluadorResponseDto> {
+    this.assertAdministrador(user);
+
+    const evaluador = await this.usuarioRepository.findOne({
+      where: { id: evaluadorId, rol: RolUsuarioAdmin.Evaluador },
+      select: [
+        'id',
+        'email',
+        'nombre',
+        'firma',
+        'cedulaProfesional',
+        'rol',
+        'isSuperuser',
+        'active',
+        'supervisorId',
+        'createdAt',
+      ],
+    });
+    if (!evaluador) {
+      throw new NotFoundException(
+        `Evaluador con id ${evaluadorId} no encontrado`,
+      );
+    }
+
+    let nextSupervisorId: string | null = null;
+
+    if (dto.supervisorId !== null) {
+      if (dto.supervisorId === evaluadorId) {
+        throw new BadRequestException(
+          'Un evaluador no puede ser su propio supervisor',
+        );
+      }
+
+      const supervisor = await this.usuarioRepository.findOne({
+        where: { id: dto.supervisorId },
+        select: ['id', 'rol', 'active', 'firma', 'supervisorId'],
+      });
+      if (!supervisor) {
+        throw new BadRequestException('Supervisor no encontrado');
+      }
+      if (supervisor.rol !== RolUsuarioAdmin.Evaluador) {
+        throw new BadRequestException(
+          'El supervisor debe ser un usuario con rol evaluador',
+        );
+      }
+      if (!supervisor.active) {
+        throw new BadRequestException('El supervisor debe estar activo');
+      }
+      if (!supervisor.firma?.trim()) {
+        throw new BadRequestException(
+          'El supervisor debe tener firma configurada',
+        );
+      }
+      if (supervisor.supervisorId === evaluadorId) {
+        throw new BadRequestException(
+          'No se permite una relación cíclica de supervisión',
+        );
+      }
+
+      nextSupervisorId = supervisor.id;
+    }
+
+    await this.usuarioRepository.update(
+      { id: evaluadorId },
+      { supervisorId: nextSupervisorId },
+    );
+
+    const assignments = await this.evaluadorTenantRepository.find({
+      where: { usuarioId: evaluadorId },
+      select: ['tenantId'],
+    });
+
+    return this.toEvaluadorResponse(
+      { ...evaluador, supervisorId: nextSupervisorId },
+      assignments.map((a) => a.tenantId),
+    );
   }
 }

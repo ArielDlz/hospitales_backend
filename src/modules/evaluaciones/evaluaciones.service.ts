@@ -320,7 +320,7 @@ export class EvaluacionesService {
     user: JwtPayloadAdmin,
   ): Promise<FirmarInformeResponseDto> {
     const aspirante = await this.loadAspiranteWithFlow(aspiranteId);
-    this.assertEvaluadorCanAccessAspirante(user, aspirante);
+    await this.assertCanAccessForFirma(user, aspirante);
 
     const signer = await this.usuarioRepository.findOne({
       where: { id: user.sub },
@@ -392,7 +392,7 @@ export class EvaluacionesService {
     user: JwtPayloadAdmin,
   ): Promise<InformePdfResult> {
     const aspirante = await this.loadAspiranteWithFlow(aspiranteId);
-    this.assertEvaluadorCanAccessAspirante(user, aspirante);
+    await this.assertCanAccessForFirma(user, aspirante);
 
     if (!aspirante.veredictoInforme?.trim()) {
       throw new NotFoundException(
@@ -492,10 +492,28 @@ export class EvaluacionesService {
     user: JwtPayloadAdmin,
   ): Promise<{ aspirante: Aspirante; readOnly: boolean }> {
     let aspirante = await this.loadAspiranteWithFlow(aspiranteId);
-    this.assertEvaluadorCanAccessAspirante(user, aspirante);
     this.assertAspiranteEnColaEvaluacion(aspirante);
 
     if (user.rol === RolUsuarioAdmin.Evaluador) {
+      if (
+        aspirante.idEvaluadorAsignado &&
+        aspirante.idEvaluadorAsignado !== user.sub
+      ) {
+        const isSupervisor = await this.isSupervisorOfAssignedEvaluador(
+          user.sub,
+          aspirante,
+        );
+        if (isSupervisor) {
+          return { aspirante, readOnly: true };
+        }
+        this.assertEvaluadorCanAccessAspirante(user, aspirante);
+        throw new ForbiddenException(
+          'Este aspirante está siendo evaluado por otro evaluador',
+        );
+      }
+
+      this.assertEvaluadorCanAccessAspirante(user, aspirante);
+
       if (!aspirante.idEvaluadorAsignado) {
         await this.aspiranteRepository.update(
           { id: aspiranteId, idEvaluadorAsignado: IsNull() },
@@ -526,6 +544,58 @@ export class EvaluacionesService {
     }
 
     return { aspirante, readOnly: true };
+  }
+
+  private async isSupervisorOfAssignedEvaluador(
+    userId: string,
+    aspirante: Aspirante,
+  ): Promise<boolean> {
+    if (!aspirante.idEvaluadorAsignado) {
+      return false;
+    }
+    const assigned = await this.usuarioRepository.findOne({
+      where: { id: aspirante.idEvaluadorAsignado },
+      select: ['supervisorId'],
+    });
+    return assigned?.supervisorId === userId;
+  }
+
+  /**
+   * Firma / descarga de informe firmado:
+   * - administrador: permitido (sin tenant)
+   * - evaluador asignado: requiere tenant
+   * - supervisor del asignado: bypass de tenant
+   */
+  private async assertCanAccessForFirma(
+    user: JwtPayloadAdmin,
+    aspirante: Aspirante,
+  ): Promise<void> {
+    if (user.rol === RolUsuarioAdmin.Administrador) {
+      return;
+    }
+
+    if (user.rol !== RolUsuarioAdmin.Evaluador) {
+      throw new ForbiddenException(
+        'No tienes permiso para firmar o descargar este informe',
+      );
+    }
+
+    if (aspirante.idEvaluadorAsignado === user.sub) {
+      this.assertEvaluadorCanAccessAspirante(user, aspirante);
+      return;
+    }
+
+    const isSupervisor = await this.isSupervisorOfAssignedEvaluador(
+      user.sub,
+      aspirante,
+    );
+    if (isSupervisor) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      'Solo el evaluador asignado o su supervisor pueden firmar este informe',
+    );
   }
 
   private assertCanEditEvaluation(

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -13,6 +14,10 @@ import { Aspirante } from '../aspirante/aspirante.entity';
 import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 import { AuthService } from '../auth/auth.service';
 import { Hospital } from '../hospital/hospital.entity';
+import {
+  isTenantAccessClosed,
+  MSG_ACCESO_FINALIZADO,
+} from '../hospital/tenant-access-window';
 import { JwtPayloadAspirante } from '../../common/interfaces/jwt-payload.interface';
 import { Payment, PaymentStatus } from './entities/payment.entity';
 import { ConfirmPaymentResponseDto } from './dto/confirm-payment-response.dto';
@@ -75,6 +80,8 @@ export class PaymentsService {
       throw new ConflictException('Este aspirante ya completó el pago');
     }
 
+    await this.rejectNewPaymentsIfTenantClosed(user.tenantId, existing);
+
     if (existing?.stripePaymentIntentId) {
       const reused = await this.tryReuseExistingPaymentIntent(
         existing,
@@ -102,17 +109,23 @@ export class PaymentsService {
     if (intent.metadata.tenantId !== user.tenantId) {
       throw new BadRequestException('El pago no corresponde a este hospital');
     }
-    if (intent.status === 'requires_action') {
-      throw new BadRequestException(
-        'Debes completar la autenticación 3D Secure antes de confirmar el pago',
-      );
-    }
-    if (intent.status === 'processing') {
-      throw new BadRequestException(
-        'El pago está en proceso; intenta confirmar de nuevo en unos segundos',
-      );
-    }
+
     if (intent.status !== 'succeeded') {
+      const existing = await this.paymentRepository.findOne({
+        where: { tenantId: user.tenantId, aspiranteId: user.sub },
+      });
+      await this.rejectNewPaymentsIfTenantClosed(user.tenantId, existing);
+
+      if (intent.status === 'requires_action') {
+        throw new BadRequestException(
+          'Debes completar la autenticación 3D Secure antes de confirmar el pago',
+        );
+      }
+      if (intent.status === 'processing') {
+        throw new BadRequestException(
+          'El pago está en proceso; intenta confirmar de nuevo en unos segundos',
+        );
+      }
       throw new BadRequestException('El pago aún no se ha completado');
     }
 
@@ -321,6 +334,35 @@ export class PaymentsService {
       `PaymentIntent no reutilizable (intent=${intent.id}, status=${intent.status}), se creará uno nuevo`,
     );
     return null;
+  }
+
+  /**
+   * After acceso_cierra_at: cancel this aspirante's unpaid Stripe intent (if any),
+   * mark local row canceled, then 403. Paid intents / succeeded confirms are not blocked here.
+   */
+  private async rejectNewPaymentsIfTenantClosed(
+    tenantId: string,
+    existing: Payment | null | undefined,
+  ): Promise<void> {
+    const hospital = await this.hospitalRepository.findOne({
+      where: { uuid: tenantId, active: true },
+      select: ['accesoCierraAt'],
+    });
+    if (!hospital || !isTenantAccessClosed(hospital)) {
+      return;
+    }
+
+    if (existing && existing.status !== PaymentStatus.Paid) {
+      if (existing.stripePaymentIntentId) {
+        await this.cancelPaymentIntentIfPossible(existing.stripePaymentIntentId);
+      }
+      if (existing.status !== PaymentStatus.Canceled) {
+        existing.status = PaymentStatus.Canceled;
+        await this.paymentRepository.save(existing);
+      }
+    }
+
+    throw new ForbiddenException(MSG_ACCESO_FINALIZADO);
   }
 
   private async cancelPaymentIntentIfPossible(

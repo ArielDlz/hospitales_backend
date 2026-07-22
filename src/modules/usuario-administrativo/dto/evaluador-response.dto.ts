@@ -6,46 +6,54 @@ export class EvaluadorResponseDto {
     example: '550e8400-e29b-41d4-a716-446655440000',
     description: 'ID del evaluador',
   })
-  id: string;
+  id!: string;
 
   @ApiProperty({ example: 'evaluador@hospital.com' })
-  email: string;
+  email!: string;
 
   @ApiPropertyOptional({ example: 'María García', nullable: true })
-  nombre: string | null;
+  nombre!: string | null;
 
   @ApiPropertyOptional({
     example: 'https://bucket.s3.amazonaws.com/firmas/evaluador.png',
     description: 'URL de la imagen de firma del evaluador',
     nullable: true,
   })
-  firma: string | null;
+  firma!: string | null;
 
   @ApiPropertyOptional({
     example: '12345678',
     description: 'Cédula profesional del evaluador',
     nullable: true,
   })
-  cedulaProfesional: string | null;
+  cedulaProfesional!: string | null;
 
   @ApiProperty({ example: RolUsuarioAdmin.Evaluador, enum: RolUsuarioAdmin })
-  rol: RolUsuarioAdmin;
+  rol!: RolUsuarioAdmin;
 
   @ApiProperty({ example: false })
-  isSuperuser: boolean;
+  isSuperuser!: boolean;
 
   @ApiProperty({ example: true })
-  active: boolean;
+  active!: boolean;
 
   @ApiProperty({
     example: ['550e8400-e29b-41d4-a716-446655440001'],
     description: 'Hospitales asignados al evaluador',
     type: [String],
   })
-  tenantIds: string[];
+  tenantIds!: string[];
+
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440002',
+    description:
+      'UUID del evaluador supervisor (opcional). Solo meaningful para evaluadores.',
+    nullable: true,
+  })
+  supervisorId!: string | null;
 
   @ApiProperty({ example: '2025-01-15T10:30:00.000Z' })
-  createdAt: Date;
+  createdAt!: Date;
 
   @ApiPropertyOptional({
     example: true,

@@ -89,6 +89,7 @@ psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/018_hospital
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/019_solicitudes_acceso.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/020_hospitales_acceso_ventana.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/021_aspirantes_especialidad_nacionalidad_rfc.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/023_usuarios_administrativos_supervisor.sql
 ```
 
 ### Ventana de acceso por hospital (tenant)
@@ -97,8 +98,11 @@ Columnas `hospitales.acceso_abre_at` y `hospitales.acceso_cierra_at` (`TIMESTAMP
 
 - **NULL** = sin restricción (fail open).
 - Si `acceso_abre_at` está definido y aún no llegó → `403` *"Todavía no se abre el acceso"* en login, activación y solicitudes de acceso.
-- Si `acceso_cierra_at` está definido y ya pasó → `403` *"El tiempo para aplicar las pruebas ha finalizado"* en esos mismos endpoints públicos.
-- Aspirantes ya autenticados pueden seguir con pruebas; al reemitir JWT: `1d` si el tenant no ha cerrado, `1h` después del cierre.
+- Si `acceso_cierra_at` está definido y ya pasó (soft-close):
+  - **Bloqueado:** solicitudes de acceso, activación (nuevas contraseñas) y **nuevos pagos** (`POST /payments/intent` cancela el PaymentIntent impago del aspirante si existe y responde `403`).
+  - **Login:** permitido solo si el aspirante tiene `evaluation_flow_steps.order_id >= 3` (ya pagó); pasos 1–2 reciben el mismo `403` de ventana finalizada.
+  - **Pagos ya `succeeded`:** el webhook y `POST /payments/confirm` siguen honrando el pago y avanzan 2→3 aunque el cierre ya haya pasado.
+  - Aspirantes autenticados (pagados) pueden seguir con pruebas; JWT de aspirante siempre `1d`.
 - `GET /hospitales/by-slug/:slug` expone `acceso_abre_at` y `acceso_cierra_at` para la UI.
 
 Ejemplo (hora Ciudad de México, UTC−6):
@@ -195,6 +199,18 @@ Webhook (público): `POST /webhooks/stripe` — requiere `stripe listen` en desa
 { "email": "admin@ejemplo.com", "password": "********" }
 ```
 
+JWT admin incluye `signature`, `supervisorId` (`null` si no aplica) y `supervisedUserIds` (array, vacío si ninguno). Tras cambiar supervisión hay que volver a iniciar sesión para refrescar esos claims.
+
+**Usuarios administrativos / evaluadores** (JWT administrador):
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/usuarios-administrativos/evaluadores` | Listar evaluadores (incluye `supervisorId`) |
+| POST | `/usuarios-administrativos/evaluadores` | Crear evaluador |
+| PATCH | `/usuarios-administrativos/evaluadores/:id` | Set/clear `supervisorId` (`null` lo quita). Supervisor debe ser evaluador activo con firma |
+
+`supervisor_id` es opcional y solo meaningful para evaluadores (también se puede setear por SQL).
+
 **Login aspirante** (`POST /auth/aspirante/login`):
 ```json
 {
@@ -248,7 +264,7 @@ Campos útiles en cada ítem del listado:
 | POST | `/evaluaciones/aspirantes/:aspiranteId/informe` | Informe final + veredicto (solo evaluador asignado, paso 6) |
 | POST | `/evaluaciones/aspirantes/:aspiranteId/confirmar` | Confirmar evaluación → paso 7 y `pruebas_aspirantes.status=evaluada` |
 
-**Bloqueo por evaluador:** al abrir el workspace, el primer evaluador queda asignado en `aspirantes.id_evaluador_asignado`. Otros evaluadores reciben **403**. El administrador puede **ver** el workspace (`readOnly: true`) pero no editar. La asignación se conserva como historial tras confirmar.
+**Bloqueo por evaluador:** al abrir el workspace, el primer evaluador queda asignado en `aspirantes.id_evaluador_asignado`. Otros evaluadores reciben **403**. El administrador puede **ver** el workspace (`readOnly: true`) pero no editar. El **supervisor** del evaluador asignado también puede abrir el workspace en `readOnly: true` y **firmar** el informe (bypass de tenant). La asignación se conserva como historial tras confirmar.
 
 Campos extra en workspace: `readOnly`, `evaluadorAsignadoEmail`.
 
@@ -260,6 +276,7 @@ Flujo evaluador:
 4. Revisar respuestas de las pruebas (sin comentarios por intento).
 5. Enviar informe con `POST .../informe`.
 6. Confirmar con `POST .../confirmar` (habilitar en UI si `canConfirmarEvaluacion === true` en el workspace).
+7. Firmar con `POST .../firmar` (evaluador asignado con firma, su supervisor, o admin con firma).
 
 **Pruebas** (JWT admin/evaluador para lectura; crear/editar/borrado lógico solo **administrador** — ver Swagger):
 
@@ -295,7 +312,8 @@ Flujo evaluador:
 
 ### Usuarios administrativos
 - **Administradores:** Acceso a todos los tenants
-- **Evaluadores:** Acceso global o restringido a tenants asignados en `evaluador_tenant`
+- **Evaluadores:** Acceso restringido a tenants asignados en `evaluador_tenant`
+- **Supervisor (opcional):** `usuarios_administrativos.supervisor_id` → otro evaluador con firma; un evaluador tiene a lo sumo un supervisor
 
 ## Estructura del proyecto
 
