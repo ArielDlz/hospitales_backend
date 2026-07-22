@@ -12,6 +12,7 @@ import {
   HEADER_ORG_LINE,
   HEADER_REPORT_SUBTITLE,
   HEADER_REPORT_TITLE,
+  HEADER_DETAIL_INSET_PT,
   MARGIN_PT,
   PAGE_HEIGHT,
   PAGE_WIDTH,
@@ -212,24 +213,26 @@ export class InformePdfService {
         );
 
         let detailY = doc.y + 8;
+        const detailX = contentX + HEADER_DETAIL_INSET_PT;
+        const detailWidth = contentWidth - HEADER_DETAIL_INSET_PT;
         doc
           .font('Helvetica')
           .fontSize(10)
           .fillColor(BRAND_COLOR)
-          .text(`Especialidad: ${especialidad}`, contentX, detailY, {
-            width: contentWidth,
+          .text(`Especialidad: ${especialidad}`, detailX, detailY, {
+            width: detailWidth,
             align: 'left',
           });
 
         detailY = doc.y + 3;
-        doc.text(`Género: ${generoLabel}`, contentX, detailY, {
-          width: contentWidth,
+        doc.text(`Género: ${generoLabel}`, detailX, detailY, {
+          width: detailWidth,
           align: 'left',
         });
 
         detailY = doc.y + 3;
-        doc.text(`Fecha de Nacimiento: ${fechaNacimiento}`, contentX, detailY, {
-          width: contentWidth,
+        doc.text(`Fecha de Nacimiento: ${fechaNacimiento}`, detailX, detailY, {
+          width: detailWidth,
           align: 'left',
         });
 
@@ -278,11 +281,6 @@ export class InformePdfService {
       };
 
       doc.font('Helvetica').fontSize(11).fillColor('#000000');
-
-      const evaluadorLine = `Nombre del evaluador: ${data.emailEvaluador}`;
-      ensureSpace(16);
-      doc.text(evaluadorLine, contentX, y, { width: contentWidth });
-      y = doc.y + 16;
 
       y = this.drawComentarioSection(
         doc,

@@ -6,6 +6,7 @@ import { BrevoClient } from './brevo.client';
 import { buildPrimerAccesoEmail } from './templates/primer-acceso.template';
 import { buildActivarCuentaEmail } from './templates/activar-cuenta.template';
 import { buildEvaluadorRegistroEmail } from './templates/evaluador-registro.template';
+import { buildRecordatorioPruebasEmail } from './templates/recordatorio-pruebas.template';
 
 export interface MailFailureAlertContext {
   aspiranteId: string;
@@ -106,6 +107,36 @@ export class MailService {
       throw new Error('PRIMER_ACCESO_DOMAIN is required for primer acceso links');
     }
     return `https://${hospital.slug}.${domain}/confirmar-acceso?token=${token}`;
+  }
+
+  private buildAspiranteLoginUrl(hospital: Hospital): string {
+    const domain = this.configService.get<string>('PRIMER_ACCESO_DOMAIN');
+    if (!domain) {
+      throw new Error('PRIMER_ACCESO_DOMAIN is required for aspirante login links');
+    }
+    return `https://${hospital.slug}.${domain}/login`;
+  }
+
+  async sendRecordatorioPruebasEmail(
+    aspirante: Aspirante,
+    hospital: Hospital,
+  ): Promise<void> {
+    this.assertBrevoConfigured();
+
+    const loginUrl = this.buildAspiranteLoginUrl(hospital);
+    const { subject, html, text } = buildRecordatorioPruebasEmail({
+      nombre: aspirante.nombre,
+      loginUrl,
+    });
+
+    const sender = this.getSender();
+    await this.brevoClient.sendTransactional({
+      sender,
+      to: [{ email: aspirante.email }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    });
   }
 
   async sendEvaluadorRegistroEmail(

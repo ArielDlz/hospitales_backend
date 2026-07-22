@@ -379,14 +379,6 @@ export class EvaluacionesService {
     const { evaluacion, veredicto, emailEvaluador } =
       await this.loadInformePdfContext(aspiranteId);
 
-    const hospital = await this.hospitalRepository.findOne({
-      where: { uuid: aspirante.tenantId },
-      select: ['nombre'],
-    });
-    if (!hospital) {
-      throw new NotFoundException('Hospital del aspirante no encontrado');
-    }
-
     const nombreFirmante = signer.nombre?.trim() || signer.email;
     const buffer = await this.informePdfService.buildPdf({
       nombre: aspirante.nombre,
@@ -405,11 +397,10 @@ export class EvaluacionesService {
       cedulaProfesional: signer.cedulaProfesional,
     });
 
-    const nombreCompleto = `${aspirante.nombre} ${aspirante.apellidos}`.trim();
     const filename = buildInformeFirmadoFilename(
-      aspirante.registroHospital,
-      nombreCompleto,
-      hospital.nombre,
+      aspirante.documento,
+      veredicto.codigo,
+      veredicto.etiqueta,
     );
     const uploaded = await this.s3Storage.uploadBuffer({
       buffer,
@@ -455,17 +446,27 @@ export class EvaluacionesService {
       );
     }
 
-    const hospital = await this.hospitalRepository.findOne({
-      where: { uuid: aspirante.tenantId },
-      select: ['nombre'],
-    });
-
     const buffer = Buffer.from(await response.arrayBuffer());
+
+    let veredictoCodigo: string | null = null;
+    let veredictoEtiqueta: string | null = null;
+    const evaluacion = await this.aspiranteEvaluacionRepository.findOne({
+      where: { idAspirante: aspiranteId },
+      select: ['idVeredicto'],
+    });
+    if (evaluacion?.idVeredicto != null) {
+      const veredicto = await this.veredictoRepository.findOne({
+        where: { idVeredicto: evaluacion.idVeredicto },
+        select: ['codigo', 'etiqueta'],
+      });
+      veredictoCodigo = veredicto?.codigo ?? null;
+      veredictoEtiqueta = veredicto?.etiqueta ?? null;
+    }
+
     const filename = resolveInformeFirmadoFilename({
-      registroHospital: aspirante.registroHospital,
-      nombre: aspirante.nombre,
-      apellidos: aspirante.apellidos,
-      hospitalNombre: hospital?.nombre ?? null,
+      documento: aspirante.documento,
+      veredictoCodigo,
+      veredictoEtiqueta,
       veredictoInformeUrl: aspirante.veredictoInforme,
     });
 

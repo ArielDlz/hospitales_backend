@@ -35,5 +35,8 @@ export const COMENTARIO_EXTRA_INSET_PT = 0.75 * CM_TO_PT;
 /** Padding between the bordered box and the justified informe text. */
 export const COMENTARIO_BOX_PADDING_PT = 0.5 * CM_TO_PT;
 
+/** Horizontal inset from the page border for left-aligned header demographics. */
+export const HEADER_DETAIL_INSET_PT = 0.5 * CM_TO_PT;
+
 /** Fraction of content width used for the signature underline (centered). */
 export const SIGNATURE_LINE_WIDTH_RATIO = 0.32;

@@ -1,19 +1,36 @@
+import { resolveResultadoPerfilKey } from './informe-pdf.utils';
+
+function sanitizeFilenamePart(value: string): string {
+  return value
+    .replace(/[/\\?%*:|"<>]/g, '')
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .trim();
+}
+
+/** A = Aceptado (incluye con reservas); N = No aceptado. */
+export function resolveVeredictoInicial(
+  codigo?: string | null,
+  etiqueta?: string | null,
+): 'A' | 'N' {
+  return resolveResultadoPerfilKey(codigo ?? undefined, etiqueta ?? undefined) ===
+    'no_aceptado'
+    ? 'N'
+    : 'A';
+}
+
+/**
+ * Signed informe S3 filename:
+ * `{CURP}_1_{veredicto_inicial}_25_2027.pdf`
+ * CURP from aspirante.documento; veredicto_inicial is A or N.
+ */
 export function buildInformeFirmadoFilename(
-  registroHospital: string,
-  nombreCompleto: string,
-  hospitalNombre: string,
+  documento: string | null | undefined,
+  veredictoCodigo?: string | null,
+  veredictoEtiqueta?: string | null,
 ): string {
-  const sanitize = (value: string) =>
-    value
-      .replace(/[/\\?%*:|"<>]/g, '')
-      .replace(/[\x00-\x1f\x7f]/g, '')
-      .trim();
-
-  const registro = sanitize(registroHospital);
-  const aspirante = sanitize(nombreCompleto);
-  const hospital = sanitize(hospitalNombre);
-
-  return `${registro} - ${aspirante} - ${hospital}.pdf`;
+  const curp = sanitizeFilenamePart(documento ?? '');
+  const inicial = resolveVeredictoInicial(veredictoCodigo, veredictoEtiqueta);
+  return `${curp}_1_${inicial}_25_2027.pdf`;
 }
 
 export function filenameFromInformeUrl(url: string): string {
@@ -27,18 +44,16 @@ export function filenameFromInformeUrl(url: string): string {
 }
 
 export function resolveInformeFirmadoFilename(params: {
-  registroHospital: string;
-  nombre: string;
-  apellidos: string;
-  hospitalNombre: string | null;
+  documento: string | null | undefined;
+  veredictoCodigo?: string | null;
+  veredictoEtiqueta?: string | null;
   veredictoInformeUrl: string;
 }): string {
-  if (params.hospitalNombre?.trim()) {
-    const nombreCompleto = `${params.nombre} ${params.apellidos}`.trim();
+  if (params.documento?.trim()) {
     return buildInformeFirmadoFilename(
-      params.registroHospital,
-      nombreCompleto,
-      params.hospitalNombre,
+      params.documento,
+      params.veredictoCodigo,
+      params.veredictoEtiqueta,
     );
   }
   return filenameFromInformeUrl(params.veredictoInformeUrl);

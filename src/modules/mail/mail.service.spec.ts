@@ -139,6 +139,32 @@ describe('MailService', () => {
     ).rejects.toThrow('Brevo no configurado');
   });
 
+  it('sendRecordatorioPruebasEmail should call Brevo with login CTA and no registration block', async () => {
+    await service.sendRecordatorioPruebasEmail(aspirante, hospital);
+
+    expect(brevoClient.sendTransactional).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sender: { email: 'registro@arieldelao.dev', name: 'Registro' },
+        to: [{ email: 'aspirante@example.com' }],
+        subject:
+          'Tiene evaluaciones pendientes y el plazo está por finalizar.',
+        htmlContent: expect.stringContaining('Ir a mis pruebas'),
+        textContent: expect.stringContaining('+525527592438'),
+      }),
+    );
+    const html = brevoClient.sendTransactional.mock.calls[0][0].htmlContent;
+    expect(html).toContain('https://hospital-test.arieldelao.dev/login');
+    expect(html).not.toContain('Número de registro');
+  });
+
+  it('sendRecordatorioPruebasEmail should throw when Brevo is not configured', async () => {
+    brevoClient.isEnabled.mockReturnValue(false);
+
+    await expect(
+      service.sendRecordatorioPruebasEmail(aspirante, hospital),
+    ).rejects.toThrow('Brevo no configurado');
+  });
+
   it('sendAdminMailFailureAlert should notify admin', async () => {
     await service.sendAdminMailFailureAlert({
       aspiranteId: 'id-1',
