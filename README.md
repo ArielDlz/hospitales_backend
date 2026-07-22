@@ -234,6 +234,7 @@ Rutas protegidas requieren el header: `Authorization: Bearer <accessToken>`
 |--------|------|-------------|
 | GET | `/aspirantes` | Listar aspirantes. Requiere `tenantId` o `slug`. Por defecto **solo activos** (`includeInactive` omitido o distinto de `true`). Evaluador con `slug=admin` ve aspirantes de sus hospitales asignados. |
 | POST | `/aspirantes` | Crear aspirante e enviar correo de activación |
+| POST | `/aspirantes/recordatorio-pruebas` | Enviar recordatorio de pruebas pendientes (**solo administrador**). Body: `{ email, tenantId }`. Solo si el aspirante está en paso 3 o 4 y tiene menos intentos `por_evaluar` que pruebas habilitadas del hospital. CTA: `https://{slug}.{PRIMER_ACCESO_DOMAIN}/login` |
 
 Ejemplo para tabla de evaluador (solo activos, todos sus hospitales):
 

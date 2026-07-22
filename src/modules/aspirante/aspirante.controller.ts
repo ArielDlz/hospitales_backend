@@ -34,6 +34,8 @@ import { AspiranteImportService } from './import/aspirante-import.service';
 import { AspiranteResponseDto } from './dto/aspirante-response.dto';
 import { AspiranteImportReportDto } from './dto/aspirante-import-report.dto';
 import { CreateAspiranteDto } from './dto/create-aspirante.dto';
+import { SendRecordatorioPruebasDto } from './dto/send-recordatorio-pruebas.dto';
+import { RecordatorioPruebasResponseDto } from './dto/recordatorio-pruebas-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { SuperuserGuard } from '../auth/guards/superuser.guard';
@@ -112,6 +114,34 @@ export class AspiranteController {
     @CurrentUser() user: JwtPayloadAdmin,
   ) {
     return this.aspiranteService.create(dto, user);
+  }
+
+  @Post('recordatorio-pruebas')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Enviar recordatorio de pruebas pendientes (solo administrador). Requiere paso 3 o 4 y menos intentos por_evaluar que pruebas habilitadas del hospital.',
+  })
+  @ApiOkResponse({
+    description: 'Recordatorio enviado',
+    type: RecordatorioPruebasResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Aspirante ya concluyó sus pruebas (paso distinto de 3/4 o suficientes por_evaluar)',
+  })
+  @ApiResponse({ status: 403, description: 'Solo administrador' })
+  @ApiResponse({ status: 404, description: 'Aspirante no encontrado' })
+  @ApiResponse({
+    status: 409,
+    description: 'Más de un aspirante activo con el mismo email en el hospital',
+  })
+  async sendRecordatorioPruebas(
+    @Body() dto: SendRecordatorioPruebasDto,
+    @CurrentUser() user: JwtPayloadAdmin,
+  ): Promise<RecordatorioPruebasResponseDto> {
+    return this.aspiranteService.sendRecordatorioPruebas(dto, user);
   }
 
   @Post('import/validate')

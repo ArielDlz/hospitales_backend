@@ -41,19 +41,15 @@ export class EvaluationFlowService {
   ) {}
 
   /**
-   * True when every hospital-enabled, active prueba has an attempt in a
-   * finalized status (por_evaluar or later).
+   * Enabled = pruebas_hospitales.show=true and prueba.active for the tenant.
    */
-  async areAllEnabledPruebasFinalized(
-    aspiranteId: string,
-    tenantId: string,
-  ): Promise<boolean> {
+  async getEnabledPruebaIds(tenantId: string): Promise<number[]> {
     const asignaciones = await this.pruebaHospitalRepository.find({
       where: { tenantId, show: true },
       select: ['idPrueba'],
     });
     if (asignaciones.length === 0) {
-      return false;
+      return [];
     }
 
     const idsPrueba = asignaciones.map((a) => a.idPrueba);
@@ -61,11 +57,45 @@ export class EvaluationFlowService {
       where: { idPrueba: In(idsPrueba), active: true },
       select: ['idPrueba'],
     });
-    if (pruebasActivas.length === 0) {
+    return pruebasActivas.map((p) => p.idPrueba);
+  }
+
+  /**
+   * Counts enabled hospital pruebas vs aspirante attempts in `por_evaluar`.
+   */
+  async countPorEvaluarVsEnabled(
+    aspiranteId: string,
+    tenantId: string,
+  ): Promise<{ enabledCount: number; porEvaluarCount: number }> {
+    const enabledIds = await this.getEnabledPruebaIds(tenantId);
+    if (enabledIds.length === 0) {
+      return { enabledCount: 0, porEvaluarCount: 0 };
+    }
+
+    const porEvaluarCount = await this.pruebaAspiranteRepository.count({
+      where: {
+        idAspirante: aspiranteId,
+        idPrueba: In(enabledIds),
+        status: ProcesoPrueba.PorEvaluar,
+      },
+    });
+
+    return { enabledCount: enabledIds.length, porEvaluarCount };
+  }
+
+  /**
+   * True when every hospital-enabled, active prueba has an attempt in a
+   * finalized status (por_evaluar or later).
+   */
+  async areAllEnabledPruebasFinalized(
+    aspiranteId: string,
+    tenantId: string,
+  ): Promise<boolean> {
+    const enabledIds = await this.getEnabledPruebaIds(tenantId);
+    if (enabledIds.length === 0) {
       return false;
     }
 
-    const enabledIds = pruebasActivas.map((p) => p.idPrueba);
     const intentos = await this.pruebaAspiranteRepository.find({
       where: {
         idAspirante: aspiranteId,

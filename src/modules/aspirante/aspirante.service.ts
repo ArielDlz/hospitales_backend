@@ -17,12 +17,15 @@ import { HospitalService } from '../hospital/hospital.service';
 import { MailService } from '../mail/mail.service';
 import { ConfigService } from '@nestjs/config';
 import { CreateAspiranteDto } from './dto/create-aspirante.dto';
+import { SendRecordatorioPruebasDto } from './dto/send-recordatorio-pruebas.dto';
+import { RecordatorioPruebasResponseDto } from './dto/recordatorio-pruebas-response.dto';
 import { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { Payment } from '../payments/entities/payment.entity';
 import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
 import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
+import { EvaluationFlowService } from './evaluation-flow.service';
 type AspirantePublic = Omit<
   Aspirante,
   'passwordHash' | 'primerAccesoToken' | 'evaluationFlowStep'
@@ -51,7 +54,82 @@ export class AspiranteService {
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
+    private readonly evaluationFlowService: EvaluationFlowService,
   ) {}
+
+  private assertAdministrador(user: JwtPayloadAdmin): void {
+    if (user.rol !== RolUsuarioAdmin.Administrador) {
+      throw new ForbiddenException(
+        'Solo los administradores pueden enviar recordatorios de pruebas',
+      );
+    }
+  }
+
+  async sendRecordatorioPruebas(
+    dto: SendRecordatorioPruebasDto,
+    user: JwtPayloadAdmin,
+  ): Promise<RecordatorioPruebasResponseDto> {
+    this.assertAdministrador(user);
+
+    const email = dto.email.toLowerCase().trim();
+    const matches = await this.aspiranteRepository.find({
+      where: {
+        tenantId: dto.tenantId,
+        email,
+        active: true,
+      },
+      relations: ['evaluationFlowStep'],
+    });
+
+    if (matches.length === 0) {
+      throw new NotFoundException('Aspirante no encontrado');
+    }
+    if (matches.length > 1) {
+      throw new ConflictException(
+        'Existe más de un aspirante activo con ese email en este hospital',
+      );
+    }
+
+    const aspirante = matches[0];
+    const orderId = aspirante.evaluationFlowStep?.orderId;
+    const concludedMessage = 'Este aspirante ya concluyó con sus pruebas';
+
+    if (orderId !== 3 && orderId !== 4) {
+      throw new BadRequestException(concludedMessage);
+    }
+
+    const { enabledCount, porEvaluarCount } =
+      await this.evaluationFlowService.countPorEvaluarVsEnabled(
+        aspirante.id,
+        aspirante.tenantId,
+      );
+
+    if (porEvaluarCount >= enabledCount) {
+      throw new BadRequestException(concludedMessage);
+    }
+
+    const hospital = await this.hospitalService.findByUuid(aspirante.tenantId);
+    if (!hospital) {
+      throw new BadRequestException('Hospital no encontrado');
+    }
+
+    try {
+      await this.mailService.sendRecordatorioPruebasEmail(aspirante, hospital);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Fallo envío recordatorio pruebas (aspirante ${aspirante.id}): ${errorMessage}`,
+      );
+      throw new InternalServerErrorException(
+        'No se pudo enviar el correo de recordatorio',
+      );
+    }
+
+    return {
+      message: 'Recordatorio enviado correctamente',
+      emailEnviado: true,
+    };
+  }
 
   async create(
     dto: CreateAspiranteDto,

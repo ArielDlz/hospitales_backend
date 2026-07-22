@@ -28,6 +28,7 @@ describe('EvaluationFlowService', () => {
   };
   const pruebaAspiranteRepo = {
     find: jest.fn(),
+    count: jest.fn(),
   };
 
   const aspiranteId = 'asp-uuid-1';
@@ -290,6 +291,43 @@ describe('EvaluationFlowService', () => {
       await expect(
         service.areAllEnabledPruebasFinalized(aspiranteId, tenantId),
       ).resolves.toBe(true);
+    });
+  });
+
+  describe('countPorEvaluarVsEnabled', () => {
+    it('cuenta pruebas habilitadas y intentos por_evaluar', async () => {
+      pruebaHospitalRepo.find.mockResolvedValue([
+        { idPrueba: 1 },
+        { idPrueba: 2 },
+        { idPrueba: 3 },
+      ]);
+      pruebaRepo.find.mockResolvedValue([
+        { idPrueba: 1 },
+        { idPrueba: 2 },
+        { idPrueba: 3 },
+      ]);
+      pruebaAspiranteRepo.count.mockResolvedValue(1);
+
+      await expect(
+        service.countPorEvaluarVsEnabled(aspiranteId, tenantId),
+      ).resolves.toEqual({ enabledCount: 3, porEvaluarCount: 1 });
+
+      expect(pruebaAspiranteRepo.count).toHaveBeenCalledWith({
+        where: {
+          idAspirante: aspiranteId,
+          idPrueba: expect.anything(),
+          status: ProcesoPrueba.PorEvaluar,
+        },
+      });
+    });
+
+    it('devuelve ceros si no hay pruebas habilitadas', async () => {
+      pruebaHospitalRepo.find.mockResolvedValue([]);
+
+      await expect(
+        service.countPorEvaluarVsEnabled(aspiranteId, tenantId),
+      ).resolves.toEqual({ enabledCount: 0, porEvaluarCount: 0 });
+      expect(pruebaAspiranteRepo.count).not.toHaveBeenCalled();
     });
   });
 });
