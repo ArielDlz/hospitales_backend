@@ -44,6 +44,9 @@ describe('InformePdfService', () => {
       nombre: 'Juan',
       apellidos: 'García',
       registroHospital: '251156',
+      especialidad: 'Enfermedades inflamatorias, autoinmunes y desmielinizantes',
+      genero: 'Hombre',
+      fechaNacimiento: '1988-05-27',
       emailEvaluador: 'evaluador@hospital.com',
       comentario: 'Informe de prueba con comentario del evaluador.',
       veredictoEtiqueta: 'Aceptado',
@@ -60,6 +63,9 @@ describe('InformePdfService', () => {
       nombre: 'Juan',
       apellidos: 'García',
       registroHospital: '251156',
+      especialidad: 'Cardiología',
+      genero: 'Mujer',
+      fechaNacimiento: '1995-03-15',
       emailEvaluador: 'evaluador@hospital.com',
       comentario: 'Informe de prueba con comentario del evaluador.',
       veredictoEtiqueta: 'No Aceptado',
@@ -67,6 +73,7 @@ describe('InformePdfService', () => {
       fechaInforme: new Date(2025, 8, 18),
       firmaUrl: 'https://example.com/firma.png',
       nombreFirmante: 'Dr. Firmante',
+      cedulaProfesional: '6824419',
     });
 
     expect(buffer.subarray(0, 4).toString()).toBe('%PDF');

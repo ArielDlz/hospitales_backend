@@ -342,6 +342,9 @@ export class EvaluacionesService {
       nombre: aspirante.nombre,
       apellidos: aspirante.apellidos,
       registroHospital: aspirante.registroHospital,
+      especialidad: aspirante.especialidad,
+      genero: aspirante.genero,
+      fechaNacimiento: aspirante.fechaNacimiento,
       emailEvaluador,
       comentario: evaluacion.comentario,
       veredictoEtiqueta: veredicto.etiqueta,
@@ -365,7 +368,7 @@ export class EvaluacionesService {
 
     const signer = await this.usuarioRepository.findOne({
       where: { id: user.sub },
-      select: ['nombre', 'firma', 'email'],
+      select: ['nombre', 'firma', 'email', 'cedulaProfesional'],
     });
     if (!signer?.firma?.trim()) {
       throw new ForbiddenException(
@@ -389,6 +392,9 @@ export class EvaluacionesService {
       nombre: aspirante.nombre,
       apellidos: aspirante.apellidos,
       registroHospital: aspirante.registroHospital,
+      especialidad: aspirante.especialidad,
+      genero: aspirante.genero,
+      fechaNacimiento: aspirante.fechaNacimiento,
       emailEvaluador,
       comentario: evaluacion.comentario,
       veredictoEtiqueta: veredicto.etiqueta,
@@ -396,6 +402,7 @@ export class EvaluacionesService {
       fechaInforme: new Date(),
       firmaUrl: signer.firma,
       nombreFirmante,
+      cedulaProfesional: signer.cedulaProfesional,
     });
 
     const nombreCompleto = `${aspirante.nombre} ${aspirante.apellidos}`.trim();

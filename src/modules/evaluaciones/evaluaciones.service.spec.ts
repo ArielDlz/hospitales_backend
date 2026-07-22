@@ -155,6 +155,7 @@ describe('EvaluacionesService', () => {
     email: 'asp@example.com',
     registroHospital: 'REG-001',
     especialidad: 'Cardiología',
+    genero: 'Hombre',
     fechaNacimiento: '1995-03-15',
     idEvaluadorAsignado: null as string | null,
     evaluationFlowStep: { orderId: 5, descripcion: 'Pruebas completadas' },
@@ -539,6 +540,9 @@ describe('EvaluacionesService', () => {
         nombre: 'Juan',
         apellidos: 'García',
         registroHospital: 'REG-001',
+        especialidad: 'Cardiología',
+        genero: 'Hombre',
+        fechaNacimiento: '1995-03-15',
         emailEvaluador: 'evaluador-a@hospital.com',
         comentario: 'Informe final',
         veredictoEtiqueta: 'Apto',
@@ -578,6 +582,7 @@ describe('EvaluacionesService', () => {
             nombre: 'Admin Firmante',
             firma: 'https://example.com/firma.png',
             email: 'admin@hospital.com',
+            cedulaProfesional: '6824419',
           };
         }
         if (opts.where.id === evaluadorAId) {
@@ -592,6 +597,7 @@ describe('EvaluacionesService', () => {
         nombre: 'Sin Firma',
         firma: null,
         email: 'admin@hospital.com',
+        cedulaProfesional: null,
       });
 
       await expect(
@@ -614,6 +620,9 @@ describe('EvaluacionesService', () => {
         nombre: 'Juan',
         apellidos: 'García',
         registroHospital: 'REG-001',
+        especialidad: 'Cardiología',
+        genero: 'Hombre',
+        fechaNacimiento: '1995-03-15',
         emailEvaluador: 'evaluador-a@hospital.com',
         comentario: 'Informe final',
         veredictoEtiqueta: 'Apto',
@@ -621,6 +630,7 @@ describe('EvaluacionesService', () => {
         fechaInforme: expect.any(Date),
         firmaUrl: 'https://example.com/firma.png',
         nombreFirmante: 'Admin Firmante',
+        cedulaProfesional: '6824419',
       });
       expect(s3Storage.uploadBuffer).toHaveBeenCalledWith({
         buffer: expect.any(Buffer),
@@ -677,6 +687,7 @@ describe('EvaluacionesService', () => {
               nombre: 'Supervisor Firmante',
               firma: 'https://example.com/firma-sup.png',
               email: 'supervisor@hospital.com',
+              cedulaProfesional: '1122334',
             };
           }
           if (opts.where.id === evaluadorAId) {
@@ -692,6 +703,7 @@ describe('EvaluacionesService', () => {
         expect.objectContaining({
           firmaUrl: 'https://example.com/firma-sup.png',
           nombreFirmante: 'Supervisor Firmante',
+          cedulaProfesional: '1122334',
         }),
       );
       expect(result.message).toBe('Informe firmado correctamente');
