@@ -39,6 +39,45 @@ import {
   resolveInformeFirmadoFilename,
 } from './informe-firmado-filename.util';
 
+const ISO_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})/;
+
+/** Edad en años desde YYYY-MM-DD; null si falta o es inválida. */
+function ageFromFechaNacimiento(fechaNacimiento: string | null | undefined): number | null {
+  if (!fechaNacimiento) {
+    return null;
+  }
+  const match = ISO_DATE_PREFIX.exec(
+    typeof fechaNacimiento === 'string'
+      ? fechaNacimiento
+      : String(fechaNacimiento),
+  );
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const birthDate = new Date(year, month - 1, day);
+  if (
+    birthDate.getFullYear() !== year ||
+    birthDate.getMonth() !== month - 1 ||
+    birthDate.getDate() !== day
+  ) {
+    return null;
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (
+    monthDiff < 0 ||
+    (monthDiff === 0 && today.getDate() < birthDate.getDate())
+  ) {
+    age -= 1;
+  }
+  return age;
+}
+
 export interface InformePdfResult {
   buffer: Buffer;
   filename: string;
@@ -209,6 +248,8 @@ export class EvaluacionesService {
         nombreCompleto: `${aspirante.nombre} ${aspirante.apellidos}`.trim(),
         registroHospital: aspirante.registroHospital,
         email: aspirante.email,
+        edad: ageFromFechaNacimiento(aspirante.fechaNacimiento),
+        especialidad: aspirante.especialidad ?? null,
         evaluationFlowOrderId: orderId,
         evaluationFlowDescripcion: aspirante.evaluationFlowStep?.descripcion ?? null,
       },

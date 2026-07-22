@@ -154,6 +154,8 @@ describe('EvaluacionesService', () => {
     apellidos: 'García',
     email: 'asp@example.com',
     registroHospital: 'REG-001',
+    especialidad: 'Cardiología',
+    fechaNacimiento: '1995-03-15',
     idEvaluadorAsignado: null as string | null,
     evaluationFlowStep: { orderId: 5, descripcion: 'Pruebas completadas' },
   };
@@ -305,7 +307,22 @@ describe('EvaluacionesService', () => {
       );
       expect(result.readOnly).toBe(false);
       expect(result.aspirante.evaluationFlowOrderId).toBe(6);
+      expect(result.aspirante.especialidad).toBe('Cardiología');
+      expect(result.aspirante.edad).toBeGreaterThanOrEqual(15);
       expect(result.evaluadorAsignadoEmail).toBe('evaluador-a@hospital.com');
+    });
+
+    it('expone edad null y especialidad null cuando faltan en el aspirante', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteStep6AssignedA,
+        especialidad: null,
+        fechaNacimiento: null,
+      });
+
+      const result = await service.getWorkspace(aspiranteId, evaluadorA);
+
+      expect(result.aspirante.edad).toBeNull();
+      expect(result.aspirante.especialidad).toBeNull();
     });
 
     it('rechaza evaluador B si A ya está asignado', async () => {

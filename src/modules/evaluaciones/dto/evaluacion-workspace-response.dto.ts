@@ -100,6 +100,16 @@ export class EvaluacionAspiranteResumenDto {
   @ApiProperty({ example: 'aspirante@example.com' })
   email: string;
 
+  @ApiProperty({
+    example: 31,
+    nullable: true,
+    description: 'Edad calculada desde fecha_nacimiento; null si no hay fecha',
+  })
+  edad: number | null;
+
+  @ApiProperty({ example: 'Cardiología', nullable: true })
+  especialidad: string | null;
+
   @ApiProperty({ example: 6 })
   evaluationFlowOrderId: number;
 
