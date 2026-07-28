@@ -80,4 +80,39 @@ describe('InformePdfService', () => {
     expect(buffer.length).toBeGreaterThan(500);
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
+
+  it('pagina un informe largo sin fallar (múltiples páginas)', async () => {
+    const paragraph =
+      'El aspirante construye una narrativa enfocada en la resiliencia, la responsabilidad ' +
+      'y la vocación de servicio, proyectando una imagen de elevada dedicación, rectitud y ' +
+      'compromiso ético. En el área intelectual, obtiene un puntaje de 50, percentil 75, ' +
+      'mostrando capacidad de adaptación para modular estrategias cognitivas. En la esfera ' +
+      'de la personalidad, la dinámica psíquica se organiza en torno a un Yo estructurado. ';
+    const longComentario = Array.from({ length: 12 }, () => paragraph).join('\n');
+
+    const buffer = await service.buildPdf({
+      nombre: 'Axel Eduardo',
+      apellidos: 'Beltran Martinez',
+      registroHospital: 'DI0439',
+      especialidad: 'Medicina Interna',
+      genero: 'Hombre',
+      fechaNacimiento: '2000-07-21',
+      emailEvaluador: 'evaluador@hospital.com',
+      comentario: longComentario,
+      veredictoEtiqueta: 'Aceptado',
+      veredictoCodigo: 'aceptado',
+      fechaInforme: new Date(2026, 6, 28),
+      firmaUrl: 'https://example.com/firma.png',
+      nombreFirmante: 'Miguel Sandoval Maza',
+      cedulaProfesional: '1373219',
+    });
+
+    expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
+    expect(buffer.length).toBeGreaterThan(2000);
+
+    const pageCount = (
+      buffer.toString('latin1').match(/\/Type\s*\/Page(?!s)\b/g) ?? []
+    ).length;
+    expect(pageCount).toBeGreaterThanOrEqual(2);
+  });
 });
