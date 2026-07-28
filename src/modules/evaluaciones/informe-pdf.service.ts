@@ -87,6 +87,10 @@ export class InformePdfService {
       const contentWidth = PAGE_WIDTH - 2 * MARGIN_PT;
       const contentX = MARGIN_PT;
       const colWidth = contentWidth / 12;
+      // While flowing informe text: use almost the full page (page number only).
+      const textBottomLimit =
+        PAGE_HEIGHT - MARGIN_PT - PAGE_NUMBER_BOTTOM_OFFSET_PT - 10;
+      // When placing Resultado / firma: reserve signature block height.
       const bodyBottomLimit =
         PAGE_HEIGHT -
         MARGIN_PT -
@@ -289,7 +293,7 @@ export class InformePdfService {
         contentWidth,
         data.comentario,
         () => bodyStartY,
-        bodyBottomLimit,
+        textBottomLimit,
       );
 
       const resultadoKey = resolveResultadoPerfilKey(
@@ -389,7 +393,7 @@ export class InformePdfService {
     contentWidth: number,
     comentario: string,
     getBodyStartY: () => number,
-    bodyBottomLimit: number,
+    textBottomLimit: number,
   ): number {
     const boxX = contentX + COMENTARIO_EXTRA_INSET_PT;
     const boxWidth = contentWidth - 2 * COMENTARIO_EXTRA_INSET_PT;
@@ -403,7 +407,7 @@ export class InformePdfService {
     const gapAfterSection = 24;
 
     let sectionY = y;
-    if (sectionY + 36 > bodyBottomLimit) {
+    if (sectionY + 36 > textBottomLimit) {
       doc.addPage();
       sectionY = getBodyStartY();
     }
@@ -424,7 +428,7 @@ export class InformePdfService {
       this.applyComentarioTextStyle(doc);
 
       const maxTextHeight =
-        bodyBottomLimit - segmentTopY - 2 * COMENTARIO_BOX_PADDING_PT;
+        textBottomLimit - segmentTopY - 2 * COMENTARIO_BOX_PADDING_PT;
       if (maxTextHeight <= 12) {
         doc.addPage();
         segmentTopY = getBodyStartY();
@@ -440,7 +444,7 @@ export class InformePdfService {
       const chunkHeight = doc.heightOfString(chunk, textOptions);
       const segmentHeight = chunkHeight + 2 * COMENTARIO_BOX_PADDING_PT;
 
-      if (segmentTopY + segmentHeight > bodyBottomLimit) {
+      if (segmentTopY + segmentHeight > textBottomLimit) {
         doc.addPage();
         segmentTopY = getBodyStartY();
         continue;
