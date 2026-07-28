@@ -36,6 +36,7 @@ import { Hospital } from '../hospital/hospital.entity';
 import { S3StorageService } from '../storage/s3-storage.service';
 import {
   buildInformeFirmadoFilename,
+  buildInformeFirmadoS3Key,
   resolveInformeFirmadoFilename,
 } from './informe-firmado-filename.util';
 
@@ -397,15 +398,30 @@ export class EvaluacionesService {
       cedulaProfesional: signer.cedulaProfesional,
     });
 
+    const hospital = await this.hospitalRepository.findOne({
+      where: { uuid: aspirante.tenantId },
+      select: ['slug'],
+    });
+    if (!hospital?.slug?.trim()) {
+      throw new BadRequestException(
+        'No se puede firmar el informe: el hospital no tiene slug configurado',
+      );
+    }
+
     const filename = buildInformeFirmadoFilename(
       aspirante.documento,
       veredicto.codigo,
       veredicto.etiqueta,
     );
+    const key = buildInformeFirmadoS3Key({
+      slug: hospital.slug,
+      especialidad: aspirante.especialidad,
+      filename,
+    });
     const uploaded = await this.s3Storage.uploadBuffer({
       buffer,
       contentType: 'application/pdf',
-      key: `informes-firmados/${filename}`,
+      key,
     });
 
     await this.aspiranteRepository.update(

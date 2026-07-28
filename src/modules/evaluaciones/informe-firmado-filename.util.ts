@@ -7,6 +7,30 @@ function sanitizeFilenamePart(value: string): string {
     .trim();
 }
 
+/** Lowercase path segment: strip accents, non-alphanumeric → `-`. */
+export function slugifyPathSegment(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * S3 key for signed informes:
+ * `informes-firmados/{hospitalSlug}/{especialidadSlug}/{filename}`
+ */
+export function buildInformeFirmadoS3Key(params: {
+  slug: string;
+  especialidad?: string | null;
+  filename: string;
+}): string {
+  const especialidadSegment =
+    slugifyPathSegment(params.especialidad ?? '') || 'sin-especialidad';
+  return `informes-firmados/${params.slug}/${especialidadSegment}/${params.filename}`;
+}
+
 /** A = Aceptado (incluye con reservas); N = No aceptado. */
 export function resolveVeredictoInicial(
   codigo?: string | null,

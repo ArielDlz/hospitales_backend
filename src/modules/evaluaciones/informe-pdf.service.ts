@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import PDFDocument from 'pdfkit';
+import sharp from 'sharp';
 import {
   ACCENT_COLOR,
   BRAND_COLOR,
@@ -67,7 +68,7 @@ export class InformePdfService {
         ? await this.fetchImageBuffer(
             data.firmaUrl,
             'No se pudo cargar la firma para el informe PDF',
-          )
+          ).then((buf) => this.toPdfSafeImageBuffer(buf))
         : null;
     const nombreCompleto = `${data.nombre} ${data.apellidos}`.trim();
 
@@ -618,5 +619,18 @@ export class InformePdfService {
       throw new ServiceUnavailableException(errorMessage);
     }
     return Buffer.from(await response.arrayBuffer());
+  }
+
+  /**
+   * PDFKit 0.19 mis-tags 3-component JPEGs as DeviceGray (SOF channel off-by-one),
+   * which makes color signature JPGs render blank. Convert JPEG → PNG so embedding
+   * uses the PNG path. Existing S3 JPEG firma URLs keep working unchanged.
+   */
+  private async toPdfSafeImageBuffer(buffer: Buffer): Promise<Buffer> {
+    const isJpeg = buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8;
+    if (!isJpeg) {
+      return buffer;
+    }
+    return sharp(buffer).png().toBuffer();
   }
 }
