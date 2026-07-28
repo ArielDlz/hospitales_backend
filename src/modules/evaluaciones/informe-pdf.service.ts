@@ -329,8 +329,8 @@ export class InformePdfService {
       const signatureLineCenterX = contentX + contentWidth / 2;
 
       if (firmaBuffer && data.nombreFirmante) {
-        const signatureImageWidth = contentWidth * 0.28;
-        const signatureImageHeight = 44;
+        const signatureImageWidth = contentWidth * 0.42;
+        const signatureImageHeight = 66;
         const signatureImageX =
           contentX + (contentWidth - signatureImageWidth) / 2;
 
