@@ -1,11 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import sharp from 'sharp';
 import { InformePdfService } from './informe-pdf.service';
 
 const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
 );
+
+function bufferAsArrayBuffer(buf: Buffer): ArrayBuffer {
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+}
 
 describe('InformePdfService', () => {
   let service: InformePdfService;
@@ -14,10 +19,7 @@ describe('InformePdfService', () => {
   beforeEach(async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      arrayBuffer: async () => TINY_PNG.buffer.slice(
-        TINY_PNG.byteOffset,
-        TINY_PNG.byteOffset + TINY_PNG.byteLength,
-      ),
+      arrayBuffer: async () => bufferAsArrayBuffer(TINY_PNG),
     }) as unknown as typeof fetch;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -79,6 +81,67 @@ describe('InformePdfService', () => {
     expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
     expect(buffer.length).toBeGreaterThan(500);
     expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('convierte firma JPEG a PNG para evitar el bug DeviceGray de PDFKit', async () => {
+    const jpegFirma = await sharp({
+      create: {
+        width: 200,
+        height: 60,
+        channels: 3,
+        background: { r: 255, g: 255, b: 255 },
+      },
+    })
+      .composite([
+        {
+          input: Buffer.from(
+            `<svg width="200" height="60" xmlns="http://www.w3.org/2000/svg">
+              <text x="20" y="40" font-size="28" fill="black">Firma</text>
+            </svg>`,
+          ),
+        },
+      ])
+      .jpeg()
+      .toBuffer();
+
+    expect(jpegFirma[0]).toBe(0xff);
+    expect(jpegFirma[1]).toBe(0xd8);
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => bufferAsArrayBuffer(TINY_PNG),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => bufferAsArrayBuffer(jpegFirma),
+      }) as unknown as typeof fetch;
+
+    const buffer = await service.buildPdf({
+      nombre: 'Cesar',
+      apellidos: 'Barreda Sanchez',
+      registroHospital: 'DI0671',
+      especialidad: 'Oftalmología',
+      genero: 'Hombre',
+      fechaNacimiento: '1985-10-17',
+      emailEvaluador: 'evaluador@hospital.com',
+      comentario: 'Informe de prueba con firma JPEG.',
+      veredictoEtiqueta: 'Aceptado',
+      veredictoCodigo: 'aceptado',
+      fechaInforme: new Date(2026, 6, 28),
+      firmaUrl: 'https://example.com/Miguel+Sandoval+Maza.jpg',
+      nombreFirmante: 'Miguel Sandoval Maza',
+      cedulaProfesional: '1373219',
+    });
+
+    expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
+    const pdfText = buffer.toString('latin1');
+    // JPEG must not be embedded as DeviceGray+DCTDecode (PDFKit SOF bug).
+    expect(pdfText).not.toMatch(
+      /\/ColorSpace\s*\/DeviceGray[\s\S]{0,120}\/Filter\s*\/DCTDecode/,
+    );
+    expect(pdfText).toContain('/Subtype /Image');
   });
 
   it('pagina un informe largo sin fallar (múltiples páginas)', async () => {

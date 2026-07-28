@@ -84,10 +84,13 @@ describe('EvaluacionesService', () => {
   const hospitalRepo = {
     findOne: jest.fn(),
   };
+  const nestedInformeKey =
+    'informes-firmados/hospital-general/cardiologia/PEGJ880527HDFRRL09_1_A_25_2027.pdf';
+  const nestedInformeUrl = `https://bucket.s3.amazonaws.com/${nestedInformeKey}`;
   const s3Storage = {
     uploadBuffer: jest.fn().mockResolvedValue({
-      key: 'informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
-      url: 'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+      key: nestedInformeKey,
+      url: nestedInformeUrl,
     }),
   };
   const dataSource = {
@@ -576,7 +579,10 @@ describe('EvaluacionesService', () => {
         codigo: 'apto',
         etiqueta: 'Apto',
       });
-      hospitalRepo.findOne.mockResolvedValue({ nombre: 'Hospital General' });
+      hospitalRepo.findOne.mockResolvedValue({
+        nombre: 'Hospital General',
+        slug: 'hospital-general',
+      });
       usuarioRepo.findOne.mockImplementation(async (opts: { where: { id: string } }) => {
         if (opts.where.id === 'admin-uuid') {
           return {
@@ -636,13 +642,16 @@ describe('EvaluacionesService', () => {
       expect(s3Storage.uploadBuffer).toHaveBeenCalledWith({
         buffer: expect.any(Buffer),
         contentType: 'application/pdf',
-        key: 'informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+        key: nestedInformeKey,
+      });
+      expect(hospitalRepo.findOne).toHaveBeenCalledWith({
+        where: { uuid: tenantId },
+        select: ['slug'],
       });
       expect(aspiranteRepo.update).toHaveBeenCalledWith(
         { id: aspiranteId },
         {
-          veredictoInforme:
-            'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+          veredictoInforme: nestedInformeUrl,
         },
       );
       expect(result.message).toBe('Informe firmado correctamente');
@@ -655,15 +664,23 @@ describe('EvaluacionesService', () => {
       );
     });
 
+    it('retorna 400 si el hospital no tiene slug', async () => {
+      hospitalRepo.findOne.mockResolvedValue({ slug: null });
+
+      await expect(
+        service.firmarInforme(aspiranteId, adminUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('permite re-firmar y sobrescribir veredicto_informe', async () => {
       s3Storage.uploadBuffer.mockResolvedValueOnce({
-        key: 'informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+        key: nestedInformeKey,
         url: 'https://bucket.s3.amazonaws.com/informes-firmados/v1.pdf',
       });
       await service.firmarInforme(aspiranteId, adminUser);
 
       s3Storage.uploadBuffer.mockResolvedValueOnce({
-        key: 'informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+        key: nestedInformeKey,
         url: 'https://bucket.s3.amazonaws.com/informes-firmados/v2.pdf',
       });
       const result = await service.firmarInforme(aspiranteId, adminUser);
