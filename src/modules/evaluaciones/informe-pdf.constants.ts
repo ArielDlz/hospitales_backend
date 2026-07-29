@@ -38,5 +38,9 @@ export const COMENTARIO_BOX_PADDING_PT = 0.5 * CM_TO_PT;
 /** Horizontal inset from the page border for left-aligned header demographics. */
 export const HEADER_DETAIL_INSET_PT = 0.5 * CM_TO_PT;
 
+/** Fraction of content width used for the signature image (centered). */
+export const SIGNATURE_IMAGE_WIDTH_RATIO = 0.55;
+/** Max height (pt) for the signature image after aspect-fit. */
+export const SIGNATURE_IMAGE_MAX_HEIGHT_PT = 90;
 /** Fraction of content width used for the signature underline (centered). */
-export const SIGNATURE_LINE_WIDTH_RATIO = 0.32;
+export const SIGNATURE_LINE_WIDTH_RATIO = 0.5;
