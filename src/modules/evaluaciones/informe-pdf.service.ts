@@ -20,6 +20,8 @@ import {
   PAGE_NUMBER_BOTTOM_OFFSET_PT,
   RESULTADO_SECTION_TITLE,
   SIGNATURE_BLOCK_HEIGHT_PT,
+  SIGNATURE_IMAGE_MAX_HEIGHT_PT,
+  SIGNATURE_IMAGE_WIDTH_RATIO,
   SIGNATURE_LINE_WIDTH_RATIO,
   WATERMARK_OPACITY,
   WATERMARK_SIZE_PT,
@@ -63,13 +65,18 @@ export class InformePdfService {
       this.logoUrl,
       'No se pudo cargar el logo para el informe PDF',
     );
-    const firmaBuffer =
+    const firmaPrepared =
       data.firmaUrl?.trim() && data.nombreFirmante?.trim()
         ? await this.fetchImageBuffer(
             data.firmaUrl,
             'No se pudo cargar la firma para el informe PDF',
-          ).then((buf) => this.toPdfSafeImageBuffer(buf))
+          ).then((buf) => this.prepareFirmaImageBuffer(buf))
         : null;
+    const firmaBuffer = firmaPrepared?.buffer ?? null;
+    const firmaAspect =
+      firmaPrepared && firmaPrepared.height > 0
+        ? firmaPrepared.width / firmaPrepared.height
+        : 1;
     const nombreCompleto = `${data.nombre} ${data.apellidos}`.trim();
 
     return new Promise((resolve, reject) => {
@@ -329,16 +336,20 @@ export class InformePdfService {
       const signatureLineCenterX = contentX + contentWidth / 2;
 
       if (firmaBuffer && data.nombreFirmante) {
-        const signatureImageWidth = contentWidth * 0.42;
-        const signatureImageHeight = 66;
+        const maxWidth = contentWidth * SIGNATURE_IMAGE_WIDTH_RATIO;
+        let signatureImageWidth = maxWidth;
+        let signatureImageHeight = signatureImageWidth / firmaAspect;
+        if (signatureImageHeight > SIGNATURE_IMAGE_MAX_HEIGHT_PT) {
+          signatureImageHeight = SIGNATURE_IMAGE_MAX_HEIGHT_PT;
+          signatureImageWidth = signatureImageHeight * firmaAspect;
+        }
         const signatureImageX =
           contentX + (contentWidth - signatureImageWidth) / 2;
 
         ensureSpace(signatureImageHeight + 52);
         doc.image(firmaBuffer, signatureImageX, y, {
-          fit: [signatureImageWidth, signatureImageHeight],
-          align: 'center',
-          valign: 'center',
+          width: signatureImageWidth,
+          height: signatureImageHeight,
         });
         y += signatureImageHeight + 6;
 
@@ -622,15 +633,32 @@ export class InformePdfService {
   }
 
   /**
-   * PDFKit 0.19 mis-tags 3-component JPEGs as DeviceGray (SOF channel off-by-one),
-   * which makes color signature JPGs render blank. Convert JPEG → PNG so embedding
-   * uses the PNG path. Existing S3 JPEG firma URLs keep working unchanged.
+   * Normalize firma images for PDF embedding:
+   * - Trim transparent / near-empty padding (S3 firmas are often on a large canvas)
+   * - Convert JPEG → PNG (PDFKit 0.19 mis-tags 3-component JPEGs as DeviceGray)
    */
-  private async toPdfSafeImageBuffer(buffer: Buffer): Promise<Buffer> {
-    const isJpeg = buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8;
-    if (!isJpeg) {
-      return buffer;
+  private async prepareFirmaImageBuffer(
+    buffer: Buffer,
+  ): Promise<{ buffer: Buffer; width: number; height: number }> {
+    try {
+      const trimmed = await sharp(buffer)
+        .trim({ threshold: 10 })
+        .png()
+        .toBuffer({ resolveWithObject: true });
+      return {
+        buffer: trimmed.data,
+        width: trimmed.info.width,
+        height: trimmed.info.height,
+      };
+    } catch {
+      const fallback = await sharp(buffer)
+        .png()
+        .toBuffer({ resolveWithObject: true });
+      return {
+        buffer: fallback.data,
+        width: fallback.info.width,
+        height: fallback.info.height,
+      };
     }
-    return sharp(buffer).png().toBuffer();
   }
 }
