@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import {
   formatFechaInformeEspanol,
   formatFechaNacimientoParaInforme,
@@ -24,11 +25,29 @@ describe('informe-pdf.utils', () => {
       );
     });
 
-    it('mapea no aceptado', () => {
+    it('mapea no aceptado / rechazado', () => {
       expect(resolveResultadoPerfilKey('no_aceptado', 'No Aceptado')).toBe(
         'no_aceptado',
       );
       expect(resolveResultadoPerfilKey('no_apto', 'No apto')).toBe('no_aceptado');
+      expect(resolveResultadoPerfilKey('rechazado', 'Rechazado')).toBe(
+        'no_aceptado',
+      );
+      expect(resolveResultadoPerfilKey(undefined, 'Rechazado')).toBe(
+        'no_aceptado',
+      );
+    });
+
+    it('lanza error si el veredicto no coincide con ningún resultado', () => {
+      expect(() => resolveResultadoPerfilKey('desconocido', 'Otro')).toThrow(
+        BadRequestException,
+      );
+      expect(() => resolveResultadoPerfilKey(undefined, undefined)).toThrow(
+        BadRequestException,
+      );
+      expect(() => resolveResultadoPerfilKey('', '')).toThrow(
+        BadRequestException,
+      );
     });
   });
 

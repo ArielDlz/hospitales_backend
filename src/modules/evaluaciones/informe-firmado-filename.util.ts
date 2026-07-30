@@ -73,7 +73,10 @@ export function resolveInformeFirmadoFilename(params: {
   veredictoEtiqueta?: string | null;
   veredictoInformeUrl: string;
 }): string {
-  if (params.documento?.trim()) {
+  const hasVeredicto =
+    Boolean(params.veredictoCodigo?.trim()) ||
+    Boolean(params.veredictoEtiqueta?.trim());
+  if (params.documento?.trim() && hasVeredicto) {
     return buildInformeFirmadoFilename(
       params.documento,
       params.veredictoCodigo,
