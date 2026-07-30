@@ -1,3 +1,5 @@
+import { BadRequestException } from '@nestjs/common';
+
 export type ResultadoPerfilKey =
   | 'aceptado'
   | 'aceptado_con_reservas'
@@ -17,6 +19,29 @@ export const RESULTADO_PERFIL_OPTIONS: ReadonlyArray<{
   { key: 'no_aceptado', label: 'No Aceptado', fillColor: '#DC2626' },
 ];
 
+/** Known veredicto.codigo values → PDF result box. */
+const RESULTADO_BY_CODIGO: Readonly<Record<string, ResultadoPerfilKey>> = {
+  aceptado: 'aceptado',
+  apto: 'aceptado',
+  aceptado_con_reservas: 'aceptado_con_reservas',
+  apto_reservas: 'aceptado_con_reservas',
+  apto_con_reservas: 'aceptado_con_reservas',
+  no_aceptado: 'no_aceptado',
+  no_apto: 'no_aceptado',
+  rechazado: 'no_aceptado',
+};
+
+/** Known veredicto.etiqueta values → PDF result box. */
+const RESULTADO_BY_ETIQUETA: Readonly<Record<string, ResultadoPerfilKey>> = {
+  aceptado: 'aceptado',
+  apto: 'aceptado',
+  aceptado_con_reservas: 'aceptado_con_reservas',
+  apto_con_reservas: 'aceptado_con_reservas',
+  no_aceptado: 'no_aceptado',
+  no_apto: 'no_aceptado',
+  rechazado: 'no_aceptado',
+};
+
 const MESES_ES = [
   'enero',
   'febrero',
@@ -32,20 +57,36 @@ const MESES_ES = [
   'diciembre',
 ];
 
+function normalizeVeredictoToken(value?: string): string {
+  return (value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\s-]+/g, '_');
+}
+
+/**
+ * Maps DB veredicto codigo/etiqueta to the PDF result box key.
+ * Throws if neither value matches a known result (no silent fallback).
+ */
 export function resolveResultadoPerfilKey(
   codigo?: string,
   etiqueta?: string,
 ): ResultadoPerfilKey {
-  const raw = `${codigo ?? ''} ${etiqueta ?? ''}`.toLowerCase();
-  const normalized = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const normalizedCodigo = normalizeVeredictoToken(codigo);
+  const normalizedEtiqueta = normalizeVeredictoToken(etiqueta);
 
-  if (/no[\s_-]*(acept|apto)/.test(normalized)) {
-    return 'no_aceptado';
+  if (normalizedCodigo && RESULTADO_BY_CODIGO[normalizedCodigo]) {
+    return RESULTADO_BY_CODIGO[normalizedCodigo];
   }
-  if (/reserv/.test(normalized)) {
-    return 'aceptado_con_reservas';
+  if (normalizedEtiqueta && RESULTADO_BY_ETIQUETA[normalizedEtiqueta]) {
+    return RESULTADO_BY_ETIQUETA[normalizedEtiqueta];
   }
-  return 'aceptado';
+
+  throw new BadRequestException(
+    `No se pudo mapear el veredicto a un resultado del PDF (codigo=${codigo ?? 'null'}, etiqueta=${etiqueta ?? 'null'})`,
+  );
 }
 
 export function formatFechaInformeEspanol(date: Date): string {

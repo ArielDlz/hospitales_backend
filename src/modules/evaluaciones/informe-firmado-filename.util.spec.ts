@@ -15,9 +15,10 @@ describe('informe-firmado-filename.util', () => {
       ).toBe('A');
     });
 
-    it('devuelve N para no aceptado', () => {
+    it('devuelve N para no aceptado / rechazado', () => {
       expect(resolveVeredictoInicial('no_aceptado', 'No Aceptado')).toBe('N');
       expect(resolveVeredictoInicial('no_apto', 'No apto')).toBe('N');
+      expect(resolveVeredictoInicial('rechazado', 'Rechazado')).toBe('N');
     });
   });
 
