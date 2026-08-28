@@ -38,7 +38,7 @@ export function buildPrimerAccesoEmail(
     '',
     `Hola, ${nombre}`,
     '',
-    'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura. Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:',
+    'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura. Por favor ten en cuenta que la plataforma se habilitará al iniciar el día 29 de agosto de 2026. Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:',
     '',
     activacionUrl,
     '',
@@ -77,8 +77,9 @@ export function buildPrimerAccesoEmail(
             <td style="padding:32px;">
               <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">Hola, ${escapeHtml(nombre)}</p>
               <p style="margin:0 0 24px;font-size:16px;line-height:1.5;">
-                Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura.
-                Para activar tu cuenta y establecer tu contraseña, haz clic en el botón siguiente:
+                'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura. 
+                Por favor ten en cuenta que la plataforma se habilitará al iniciar el día 29 de agosto de 2026. 
+                Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:
               </p>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 32px;">
                 <tr>
