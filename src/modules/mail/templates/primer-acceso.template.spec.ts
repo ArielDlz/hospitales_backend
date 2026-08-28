@@ -15,8 +15,18 @@ describe('buildPrimerAccesoEmail', () => {
     );
     expect(html).toContain('Plataforma de pruebas psicométricas de Psique y Cultura');
     expect(html).toContain('Hola, Juan');
+    expect(html).toContain(
+      'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura.',
+    );
+    expect(html).toContain(
+      'Para activar tu cuenta y establecer tu contraseña, haz clic en el botón siguiente:',
+    );
+    expect(html).not.toContain('Por favor completa tu registro');
     expect(html).toContain('REG-2024-001');
     expect(html).toContain('Activar mi cuenta');
+    expect(text).toContain(
+      'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura. Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:',
+    );
     expect(text).toContain('García López');
     expect(text).toContain('5551234567');
   });
