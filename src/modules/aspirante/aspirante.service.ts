@@ -76,7 +76,6 @@ export class AspiranteService {
       where: {
         tenantId: dto.tenantId,
         email,
-        active: true,
       },
       relations: ['evaluationFlowStep'],
     });
@@ -86,17 +85,82 @@ export class AspiranteService {
     }
     if (matches.length > 1) {
       throw new ConflictException(
-        'Existe más de un aspirante activo con ese email en este hospital',
+        'Existe más de un aspirante con ese email en este hospital',
       );
     }
 
     const aspirante = matches[0];
     const orderId = aspirante.evaluationFlowStep?.orderId;
-    const concludedMessage = 'Este aspirante ya concluyó con sus pruebas';
 
-    if (orderId !== 3 && orderId !== 4) {
-      throw new BadRequestException(concludedMessage);
+    if (orderId === 1) {
+      return this.sendRecordatorioPrimerAcceso(aspirante);
     }
+
+    if (orderId === 3 || orderId === 4) {
+      return this.sendRecordatorioPruebasPendientes(aspirante);
+    }
+
+    throw new BadRequestException(
+      'El aspirante no es elegible para recordatorio',
+    );
+  }
+
+  private async sendRecordatorioPrimerAcceso(
+    aspirante: Aspirante,
+  ): Promise<RecordatorioPruebasResponseDto> {
+    if (aspirante.active) {
+      throw new BadRequestException(
+        'El aspirante en paso 1 no debe estar activo',
+      );
+    }
+
+    if (!aspirante.primerAccesoToken) {
+      throw new BadRequestException(
+        'El aspirante no tiene token de primer acceso',
+      );
+    }
+
+    const token = aspirante.primerAccesoToken;
+    aspirante.primerAccesoExpira = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000,
+    );
+    await this.aspiranteRepository.save(aspirante);
+
+    const hospital = await this.hospitalService.findByUuid(aspirante.tenantId);
+    if (!hospital) {
+      throw new BadRequestException('Hospital no encontrado');
+    }
+
+    try {
+      await this.mailService.sendRecordatorioPrimerAccesoEmail(
+        aspirante,
+        token,
+        hospital,
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Fallo envío recordatorio primer acceso (aspirante ${aspirante.id}): ${errorMessage}`,
+      );
+      throw new InternalServerErrorException(
+        'No se pudo enviar el correo de recordatorio',
+      );
+    }
+
+    return {
+      message: 'Recordatorio enviado correctamente',
+      emailEnviado: true,
+    };
+  }
+
+  private async sendRecordatorioPruebasPendientes(
+    aspirante: Aspirante,
+  ): Promise<RecordatorioPruebasResponseDto> {
+    if (!aspirante.active) {
+      throw new NotFoundException('Aspirante no encontrado');
+    }
+
+    const concludedMessage = 'Este aspirante ya concluyó con sus pruebas';
 
     const { enabledCount, porEvaluarCount } =
       await this.evaluationFlowService.countPorEvaluarVsEnabled(

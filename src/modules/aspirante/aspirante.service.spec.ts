@@ -23,6 +23,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
 
   const aspiranteRepo = {
     find: jest.fn(),
+    save: jest.fn(),
   };
   const evaluationFlowService = {
     countPorEvaluarVsEnabled: jest.fn(),
@@ -32,6 +33,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
   };
   const mailService = {
     sendRecordatorioPruebasEmail: jest.fn(),
+    sendRecordatorioPrimerAccesoEmail: jest.fn(),
   };
 
   const adminUser = {
@@ -53,6 +55,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    aspiranteRepo.save.mockImplementation(async (row) => row);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -114,13 +117,14 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('400 si el paso no es 3 ni 4', async () => {
+  it('400 si el paso no es 1, 3 ni 4', async () => {
     aspiranteRepo.find.mockResolvedValue([
       {
         id: 'asp-1',
         tenantId,
         email: 'a@test.com',
         nombre: 'Juan',
+        active: true,
         evaluationFlowStep: { orderId: 5 },
       },
     ]);
@@ -130,7 +134,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
         { email: 'a@test.com', tenantId },
         adminUser,
       ),
-    ).rejects.toThrow('Este aspirante ya concluyó con sus pruebas');
+    ).rejects.toThrow('El aspirante no es elegible para recordatorio');
   });
 
   it('400 si ya tiene suficientes por_evaluar', async () => {
@@ -140,6 +144,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
         tenantId,
         email: 'a@test.com',
         nombre: 'Juan',
+        active: true,
         evaluationFlowStep: { orderId: 4 },
       },
     ]);
@@ -156,12 +161,34 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('envía el recordatorio cuando es elegible', async () => {
+  it('404 si paso 3/4 está inactivo', async () => {
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        email: 'a@test.com',
+        nombre: 'Juan',
+        active: false,
+        evaluationFlowStep: { orderId: 3 },
+      },
+    ]);
+
+    await expect(
+      service.sendRecordatorioPruebas(
+        { email: 'a@test.com', tenantId },
+        adminUser,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(mailService.sendRecordatorioPruebasEmail).not.toHaveBeenCalled();
+  });
+
+  it('envía el recordatorio de pruebas cuando es elegible (paso 3 active)', async () => {
     const aspirante = {
       id: 'asp-1',
       tenantId,
       email: 'a@test.com',
       nombre: 'Juan',
+      active: true,
       evaluationFlowStep: { orderId: 3 },
     };
     aspiranteRepo.find.mockResolvedValue([aspirante]);
@@ -190,8 +217,100 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
       expect.objectContaining({ slug: 'hospital-test' }),
     );
     expect(aspiranteRepo.find).toHaveBeenCalledWith({
-      where: { tenantId, email: 'a@test.com', active: true },
+      where: { tenantId, email: 'a@test.com' },
       relations: ['evaluationFlowStep'],
     });
+  });
+
+  it('paso 1 inactive: extiende expiry y envía recordatorio de invitación', async () => {
+    const token = 'existing-token-abc';
+    const aspirante = {
+      id: 'asp-1',
+      tenantId,
+      email: 'a@test.com',
+      nombre: 'Juan',
+      active: false,
+      primerAccesoToken: token,
+      primerAccesoExpira: new Date('2020-01-01T00:00:00.000Z'),
+      passwordHash: 'unchanged-hash',
+      evaluationFlowStep: { orderId: 1 },
+    };
+    aspiranteRepo.find.mockResolvedValue([aspirante]);
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      slug: 'hospital-test',
+      nombre: 'Hospital Test',
+    });
+    mailService.sendRecordatorioPrimerAccesoEmail.mockResolvedValue(undefined);
+
+    const before = Date.now();
+    const result = await service.sendRecordatorioPruebas(
+      { email: 'a@test.com', tenantId },
+      adminUser,
+    );
+    const after = Date.now();
+
+    expect(result).toEqual({
+      message: 'Recordatorio enviado correctamente',
+      emailEnviado: true,
+    });
+    expect(aspirante.primerAccesoToken).toBe(token);
+    expect(aspirante.passwordHash).toBe('unchanged-hash');
+    expect(aspirante.primerAccesoExpira.getTime()).toBeGreaterThanOrEqual(
+      before + 7 * 24 * 60 * 60 * 1000 - 1000,
+    );
+    expect(aspirante.primerAccesoExpira.getTime()).toBeLessThanOrEqual(
+      after + 7 * 24 * 60 * 60 * 1000 + 1000,
+    );
+    expect(aspiranteRepo.save).toHaveBeenCalledWith(aspirante);
+    expect(mailService.sendRecordatorioPrimerAccesoEmail).toHaveBeenCalledWith(
+      aspirante,
+      token,
+      expect.objectContaining({ slug: 'hospital-test' }),
+    );
+    expect(mailService.sendRecordatorioPruebasEmail).not.toHaveBeenCalled();
+  });
+
+  it('paso 1 active: rechaza como estado inválido', async () => {
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        email: 'a@test.com',
+        active: true,
+        primerAccesoToken: 'tok',
+        evaluationFlowStep: { orderId: 1 },
+      },
+    ]);
+
+    await expect(
+      service.sendRecordatorioPruebas(
+        { email: 'a@test.com', tenantId },
+        adminUser,
+      ),
+    ).rejects.toThrow('El aspirante en paso 1 no debe estar activo');
+    expect(mailService.sendRecordatorioPrimerAccesoEmail).not.toHaveBeenCalled();
+  });
+
+  it('paso 1 inactive sin token: 400', async () => {
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        email: 'a@test.com',
+        active: false,
+        primerAccesoToken: null,
+        evaluationFlowStep: { orderId: 1 },
+      },
+    ]);
+
+    await expect(
+      service.sendRecordatorioPruebas(
+        { email: 'a@test.com', tenantId },
+        adminUser,
+      ),
+    ).rejects.toThrow('El aspirante no tiene token de primer acceso');
+    expect(aspiranteRepo.save).not.toHaveBeenCalled();
+    expect(mailService.sendRecordatorioPrimerAccesoEmail).not.toHaveBeenCalled();
   });
 });

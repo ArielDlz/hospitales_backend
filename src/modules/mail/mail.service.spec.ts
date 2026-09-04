@@ -86,6 +86,41 @@ describe('MailService', () => {
     ).rejects.toThrow('Brevo no configurado');
   });
 
+  it('sendRecordatorioPrimerAccesoEmail should use same subject with recordatorio copy', async () => {
+    await service.sendRecordatorioPrimerAccesoEmail(
+      aspirante,
+      'token-reminder',
+      hospital,
+    );
+
+    expect(brevoClient.sendTransactional).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sender: { email: 'registro@arieldelao.dev', name: 'Registro' },
+        to: [{ email: 'aspirante@example.com' }],
+        subject:
+          'Confirma tu registro a la plataforma de pruebas psicométricas',
+        htmlContent: expect.stringContaining(
+          'Notamos que aún no has ingresado a la plataforma',
+        ),
+        textContent: expect.stringContaining('REG-001'),
+      }),
+    );
+    const html = brevoClient.sendTransactional.mock.calls[0][0].htmlContent;
+    expect(html).toContain(
+      'https://hospital-test.arieldelao.dev/confirmar-acceso?token=token-reminder',
+    );
+    expect(html).toContain('Activar mi cuenta');
+    expect(html).not.toContain('29 de agosto de 2026');
+  });
+
+  it('sendRecordatorioPrimerAccesoEmail should throw when Brevo is not configured', async () => {
+    brevoClient.isEnabled.mockReturnValue(false);
+
+    await expect(
+      service.sendRecordatorioPrimerAccesoEmail(aspirante, 'token', hospital),
+    ).rejects.toThrow('Brevo no configurado');
+  });
+
   it('sendActivarCuentaEmail should call Brevo with Activa tu cuenta subject and same URL', async () => {
     await service.sendActivarCuentaEmail(aspirante, 'token-xyz', hospital);
 

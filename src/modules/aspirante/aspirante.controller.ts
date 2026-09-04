@@ -120,7 +120,7 @@ export class AspiranteController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Enviar recordatorio de pruebas pendientes (solo administrador). Requiere paso 3 o 4 y menos intentos por_evaluar que pruebas habilitadas del hospital.',
+      'Enviar recordatorio (solo administrador). Paso 1 (active=false): reenvía invitación con el mismo token y expiry renovado (+7 días). Paso 3 o 4 (active=true): recordatorio de pruebas pendientes si hay menos intentos por_evaluar que pruebas habilitadas.',
   })
   @ApiOkResponse({
     description: 'Recordatorio enviado',
@@ -129,13 +129,13 @@ export class AspiranteController {
   @ApiResponse({
     status: 400,
     description:
-      'Aspirante ya concluyó sus pruebas (paso distinto de 3/4 o suficientes por_evaluar)',
+      'No elegible: paso 1 activo o sin token; paso distinto de 1/3/4; o paso 3/4 con suficientes por_evaluar',
   })
   @ApiResponse({ status: 403, description: 'Solo administrador' })
   @ApiResponse({ status: 404, description: 'Aspirante no encontrado' })
   @ApiResponse({
     status: 409,
-    description: 'Más de un aspirante activo con el mismo email en el hospital',
+    description: 'Más de un aspirante con el mismo email en el hospital',
   })
   async sendRecordatorioPruebas(
     @Body() dto: SendRecordatorioPruebasDto,

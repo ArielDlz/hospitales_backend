@@ -1,3 +1,5 @@
+export type PrimerAccesoEmailVariant = 'invitacion' | 'recordatorio';
+
 export interface PrimerAccesoEmailParams {
   nombre: string;
   apellidos: string;
@@ -5,6 +7,7 @@ export interface PrimerAccesoEmailParams {
   registroHospital: string;
   activacionUrl: string;
   expiraDias?: number;
+  variant?: PrimerAccesoEmailVariant;
 }
 
 export interface PrimerAccesoEmailContent {
@@ -19,6 +22,12 @@ const SUBJECT =
 const PLATFORM_TITLE =
   'Plataforma de pruebas psicométricas de Psique y Cultura';
 
+const INTRO_INVITACION =
+  'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura. Por favor ten en cuenta que la plataforma se habilitará al iniciar el día 29 de agosto de 2026. Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:';
+
+const INTRO_RECORDATORIO =
+  'Notamos que aún no has ingresado a la plataforma a realizar tu proceso de evaluación psicométrica, este mensaje es un recordatorio, ya que el proceso está a punto de concluir. Por favor activa tu cuenta accediendo desde el siguiente botón:';
+
 export function buildPrimerAccesoEmail(
   params: PrimerAccesoEmailParams,
 ): PrimerAccesoEmailContent {
@@ -29,16 +38,18 @@ export function buildPrimerAccesoEmail(
     registroHospital,
     activacionUrl,
     expiraDias = 7,
+    variant = 'invitacion',
   } = params;
 
   const telefonoDisplay = telefono?.trim() || 'No indicado';
+  const intro = variant === 'recordatorio' ? INTRO_RECORDATORIO : INTRO_INVITACION;
 
   const text = [
     PLATFORM_TITLE,
     '',
     `Hola, ${nombre}`,
     '',
-    'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura. Por favor ten en cuenta que la plataforma se habilitará al iniciar el día 29 de agosto de 2026. Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:',
+    intro,
     '',
     activacionUrl,
     '',
@@ -77,9 +88,7 @@ export function buildPrimerAccesoEmail(
             <td style="padding:32px;">
               <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">Hola, ${escapeHtml(nombre)}</p>
               <p style="margin:0 0 24px;font-size:16px;line-height:1.5;">
-                'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura. 
-                Por favor ten en cuenta que la plataforma se habilitará al iniciar el día 29 de agosto de 2026. 
-                Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:
+                ${escapeHtml(intro)}
               </p>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 32px;">
                 <tr>
