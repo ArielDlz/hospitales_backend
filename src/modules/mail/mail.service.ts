@@ -75,6 +75,33 @@ export class MailService {
     });
   }
 
+  async sendRecordatorioPrimerAccesoEmail(
+    aspirante: Aspirante,
+    token: string,
+    hospital: Hospital,
+  ): Promise<void> {
+    this.assertBrevoConfigured();
+
+    const activacionUrl = this.buildActivacionUrl(hospital, token);
+    const { subject, html, text } = buildPrimerAccesoEmail({
+      nombre: aspirante.nombre,
+      apellidos: aspirante.apellidos,
+      telefono: aspirante.telefono,
+      registroHospital: aspirante.registroHospital,
+      activacionUrl,
+      variant: 'recordatorio',
+    });
+
+    const sender = this.getSender();
+    await this.brevoClient.sendTransactional({
+      sender,
+      to: [{ email: aspirante.email }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    });
+  }
+
   async sendActivarCuentaEmail(
     aspirante: Aspirante,
     token: string,
