@@ -96,14 +96,16 @@ psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/023_usuarios
 
 Columnas `hospitales.acceso_abre_at` y `hospitales.acceso_cierra_at` (`TIMESTAMPTZ`, nullable).
 
-- **NULL** = sin restricción (fail open).
-- Si `acceso_abre_at` está definido y aún no llegó → `403` *"Todavía no se abre el acceso"* en login, activación y solicitudes de acceso.
-- Si `acceso_cierra_at` está definido y ya pasó (soft-close):
-  - **Bloqueado:** solicitudes de acceso, activación (nuevas contraseñas) y **nuevos pagos** (`POST /payments/intent` cancela el PaymentIntent impago del aspirante si existe y responde `403`).
-  - **Login:** permitido solo si el aspirante tiene `evaluation_flow_steps.order_id >= 3` (ya pagó); pasos 1–2 reciben el mismo `403` de ventana finalizada.
+- **NULL** = sin restricción en ese extremo (fail open).
+- **Entrada siempre permitida:** login, activación, validar token y solicitudes de acceso **no** se bloquean por estas fechas. La UI usa el estado del tenant para mostrar el mensaje.
+- `GET /hospitales/by-slug/:slug` expone `acceso_abre_at`, `acceso_cierra_at` y `acceso_estado` (`no_abierto` | `abierto` | `cerrado`) para la UI. `no_abierto` tiene prioridad si ambas cotas existen.
+- Si `acceso_abre_at` está definido y aún no llegó (`acceso_estado=no_abierto`):
+  - **Bloqueado:** nuevos pagos (`POST /payments/intent` y confirm no `succeeded`) y **todas** las pruebas (aunque el aspirante ya haya pagado). `403` *"Todavía no se abre el acceso"*. No se cancelan PaymentIntents existentes.
+- Si `acceso_cierra_at` está definido y ya pasó (`acceso_estado=cerrado`, soft-close):
+  - **Bloqueado:** **nuevos pagos** (`POST /payments/intent` cancela el PaymentIntent impago del aspirante si existe y responde `403` *"El tiempo para aplicar las pruebas ha finalizado"*).
+  - **Pruebas:** permitidas si `evaluation_flow_steps.order_id >= 3` (ya pagó); pasos 1–2 reciben `403` de pago pendiente, no de ventana.
   - **Pagos ya `succeeded`:** el webhook y `POST /payments/confirm` siguen honrando el pago y avanzan 2→3 aunque el cierre ya haya pasado.
-  - Aspirantes autenticados (pagados) pueden seguir con pruebas; JWT de aspirante siempre `1d`.
-- `GET /hospitales/by-slug/:slug` expone `acceso_abre_at` y `acceso_cierra_at` para la UI.
+  - JWT de aspirante siempre `1d`.
 
 Ejemplo (hora Ciudad de México, UTC−6):
 

@@ -4,7 +4,6 @@ import { QueryFailedError, Repository } from 'typeorm';
 import { SolicitudAcceso } from './solicitud-acceso.entity';
 import { Aspirante } from '../aspirante/aspirante.entity';
 import { HospitalService } from '../hospital/hospital.service';
-import { assertTenantAccessWindow } from '../hospital/tenant-access-window';
 import { CreateSolicitudAccesoDto } from './dto/create-solicitud-acceso.dto';
 import {
   CreateSolicitudAccesoEstado,
@@ -37,8 +36,6 @@ export class SolicitudesAccesoService {
         mensaje: 'No encontramos el hospital indicado.',
       };
     }
-
-    assertTenantAccessWindow(hospital);
 
     const aspirante = await this.aspiranteRepository.findOne({
       where: {

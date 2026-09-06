@@ -5,9 +5,11 @@ import {
   assertTenantAccessWindow,
   assertTenantNotClosed,
   isTenantAccessClosed,
+  isTenantAccessNotOpened,
   MSG_ACCESO_AUN_NO_ABIERTO,
   MSG_ACCESO_FINALIZADO,
   resolveAspiranteJwtExpiresIn,
+  resolveTenantAccessEstado,
 } from './tenant-access-window';
 
 describe('tenant-access-window', () => {
@@ -161,6 +163,62 @@ describe('tenant-access-window', () => {
           cierra.getTime() + 1,
         ),
       ).not.toThrow();
+    });
+  });
+
+  describe('isTenantAccessNotOpened', () => {
+    it('is false when abre is null', () => {
+      expect(isTenantAccessNotOpened({ accesoAbreAt: null })).toBe(false);
+    });
+
+    it('is true before open and false at the open instant', () => {
+      expect(
+        isTenantAccessNotOpened({ accesoAbreAt: abre }, abre.getTime() - 1),
+      ).toBe(true);
+      expect(
+        isTenantAccessNotOpened({ accesoAbreAt: abre }, abre.getTime()),
+      ).toBe(false);
+    });
+  });
+
+  describe('resolveTenantAccessEstado', () => {
+    it('is abierto when both dates are null', () => {
+      expect(
+        resolveTenantAccessEstado({ accesoAbreAt: null, accesoCierraAt: null }),
+      ).toBe('abierto');
+    });
+
+    it('is no_abierto before open even if cierra is also set', () => {
+      expect(
+        resolveTenantAccessEstado(
+          { accesoAbreAt: abre, accesoCierraAt: cierra },
+          abre.getTime() - 1,
+        ),
+      ).toBe('no_abierto');
+    });
+
+    it('is abierto during the window', () => {
+      expect(
+        resolveTenantAccessEstado(
+          { accesoAbreAt: abre, accesoCierraAt: cierra },
+          abre.getTime(),
+        ),
+      ).toBe('abierto');
+      expect(
+        resolveTenantAccessEstado(
+          { accesoAbreAt: abre, accesoCierraAt: cierra },
+          cierra.getTime(),
+        ),
+      ).toBe('abierto');
+    });
+
+    it('is cerrado after close', () => {
+      expect(
+        resolveTenantAccessEstado(
+          { accesoAbreAt: abre, accesoCierraAt: cierra },
+          cierra.getTime() + 1,
+        ),
+      ).toBe('cerrado');
     });
   });
 

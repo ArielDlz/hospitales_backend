@@ -44,6 +44,10 @@ import {
   PreguntaResumenWorkspaceDto,
 } from './dto/pregunta-resumen-workspace.dto';
 import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
+import {
+  isTenantAccessNotOpened,
+  MSG_ACCESO_AUN_NO_ABIERTO,
+} from '../hospital/tenant-access-window';
 
 /** Pruebas que en el workspace del evaluador usan formato resumen (sin listar todas las opciones). */
 const PRUEBAS_WORKSPACE_RESUMEN_IDS = new Set([3]);
@@ -90,6 +94,15 @@ export class PruebasService {
     if (!aspirante?.evaluationFlowStep) {
       throw new BadRequestException('Aspirante inválido o sin paso de flujo');
     }
+
+    const hospital = await this.hospitalRepository.findOne({
+      where: { uuid: aspirante.tenantId, active: true },
+      select: ['accesoAbreAt'],
+    });
+    if (hospital && isTenantAccessNotOpened(hospital)) {
+      throw new ForbiddenException(MSG_ACCESO_AUN_NO_ABIERTO);
+    }
+
     if (aspirante.evaluationFlowStep.orderId < 3) {
       throw new ForbiddenException(
         'Debes completar el pago antes de iniciar las pruebas',

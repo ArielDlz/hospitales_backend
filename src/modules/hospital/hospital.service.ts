@@ -9,6 +9,7 @@ import { Hospital } from './hospital.entity';
 import { CreateHospitalDto } from './dto/create-hospital.dto';
 import { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
+import { resolveTenantAccessEstado } from './tenant-access-window';
 
 @Injectable()
 export class HospitalService {
@@ -89,6 +90,7 @@ export class HospitalService {
       envio_correo_registro: hospital.envioCorreoRegistro,
       acceso_abre_at: hospital.accesoAbreAt,
       acceso_cierra_at: hospital.accesoCierraAt,
+      acceso_estado: resolveTenantAccessEstado(hospital),
     };
   }
 }
