@@ -20,12 +20,7 @@ import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Hospital } from '../hospital/hospital.entity';
-import {
-  assertLoginAllowedAfterClose,
-  assertTenantAccessOpened,
-  assertTenantAccessWindow,
-  resolveAspiranteJwtExpiresIn,
-} from '../hospital/tenant-access-window';
+import { resolveAspiranteJwtExpiresIn } from '../hospital/tenant-access-window';
 import { MailService } from '../mail/mail.service';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import {
@@ -169,15 +164,13 @@ export class AuthService {
   ): Promise<{ accessToken: string; expiresIn: string }> {
     const hospital = await this.hospitalRepository.findOne({
       where: { slug: dto.slug, active: true },
-      select: ['uuid', 'slug', 'accesoAbreAt', 'accesoCierraAt'],
+      select: ['uuid', 'slug', 'accesoCierraAt'],
     });
 
     if (!hospital) {
       await bcrypt.compare(dto.password, DUMMY_HASH);
       throw new UnauthorizedException(CREDENTIALS_ERROR);
     }
-
-    assertTenantAccessOpened(hospital);
 
     const aspirante = await this.aspiranteRepository.findOne({
       where: {
@@ -201,11 +194,6 @@ export class AuthService {
         'Aspirante sin paso de flujo asignado; ejecute las migraciones del catálogo evaluation_flow_steps',
       );
     }
-
-    assertLoginAllowedAfterClose(
-      hospital,
-      aspirante.evaluationFlowStep.orderId,
-    );
 
     return this.issueAspiranteAccessToken({
       aspirante,
@@ -261,8 +249,6 @@ export class AuthService {
         mensaje: 'No encontramos un aspirante con esos datos en este hospital.',
       };
     }
-
-    assertTenantAccessWindow(hospital);
 
     const aspirante = await this.aspiranteRepository.findOne({
       where: {
@@ -406,8 +392,6 @@ export class AuthService {
       );
       return { valido: false };
     }
-
-    assertTenantAccessWindow(hospital);
 
     this.logger.log(
       withReqId(
@@ -556,8 +540,6 @@ export class AuthService {
       );
       throw new BadRequestException(ACTIVACION_ERROR);
     }
-
-    assertTenantAccessWindow(hospital);
 
     if (aspirante.registroHospital.trim() !== dto.registroHospital.trim()) {
       this.logger.warn(

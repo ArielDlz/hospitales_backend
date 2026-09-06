@@ -45,4 +45,12 @@ export class TenantBySlugResponseDto {
     nullable: true,
   })
   acceso_cierra_at: Date | null;
+
+  @ApiProperty({
+    example: 'abierto',
+    description:
+      'Estado de la ventana de acceso para la UI. no_abierto = aún no llega acceso_abre_at; cerrado = ya pasó acceso_cierra_at; abierto = sin esas restricciones ahora.',
+    enum: ['no_abierto', 'abierto', 'cerrado'],
+  })
+  acceso_estado: 'no_abierto' | 'abierto' | 'cerrado';
 }

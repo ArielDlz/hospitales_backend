@@ -13,7 +13,10 @@ import { Hospital } from '../hospital/hospital.entity';
 import { AuthService } from '../auth/auth.service';
 import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 import type { JwtPayloadAspirante } from '../../common/interfaces/jwt-payload.interface';
-import { MSG_ACCESO_FINALIZADO } from '../hospital/tenant-access-window';
+import {
+  MSG_ACCESO_AUN_NO_ABIERTO,
+  MSG_ACCESO_FINALIZADO,
+} from '../hospital/tenant-access-window';
 
 const PAYMENT_AMOUNT_CENTS = 200_000;
 const STRIPE_PRICE_ID = 'price_test';
@@ -199,6 +202,7 @@ describe('PaymentsService', () => {
     mockCustomersUpdate.mockResolvedValue({ id: 'cus_existing' });
     hospitalRepo.findOne.mockResolvedValue({
       slug: 'hospital-general',
+      accesoAbreAt: null,
       accesoCierraAt: null,
     });
 
@@ -501,6 +505,29 @@ describe('PaymentsService', () => {
       expect(paymentRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ status: PaymentStatus.Canceled }),
       );
+      expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+    });
+
+    it('antes de abrir responde 403 y no cancela PaymentIntent existente', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({ ...aspiranteAtPaymentStep });
+      const existing = {
+        id: 'pay-1',
+        aspiranteId,
+        tenantId,
+        status: PaymentStatus.Pending,
+        stripePaymentIntentId: 'pi_open',
+      };
+      paymentRepo.findOne.mockResolvedValue(existing);
+      hospitalRepo.findOne.mockResolvedValue({
+        accesoAbreAt: new Date(Date.now() + 60_000),
+        accesoCierraAt: null,
+      });
+
+      await expect(service.createPaymentIntent(user)).rejects.toThrow(
+        MSG_ACCESO_AUN_NO_ABIERTO,
+      );
+      expect(mockPaymentIntentsCancel).not.toHaveBeenCalled();
+      expect(paymentRepo.save).not.toHaveBeenCalled();
       expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
     });
   });

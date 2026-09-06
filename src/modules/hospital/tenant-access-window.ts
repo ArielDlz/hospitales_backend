@@ -4,13 +4,24 @@ export const MSG_ACCESO_AUN_NO_ABIERTO = 'Todavía no se abre el acceso';
 export const MSG_ACCESO_FINALIZADO =
   'El tiempo para aplicar las pruebas ha finalizado';
 
-/** Minimum evaluation_flow_steps.order_id allowed to log in after acceso_cierra_at. */
+/** Minimum evaluation_flow_steps.order_id allowed to take pruebas after acceso_cierra_at. */
 export const MIN_FLOW_ORDER_AFTER_CLOSE = 3;
+
+export type TenantAccessEstado = 'no_abierto' | 'abierto' | 'cerrado';
 
 export type TenantAccessWindowHospital = {
   accesoAbreAt: Date | null;
   accesoCierraAt: Date | null;
 };
+
+/** True when accesoAbreAt is set and now is before that instant. */
+export function isTenantAccessNotOpened(
+  hospital: Pick<TenantAccessWindowHospital, 'accesoAbreAt'>,
+  nowMs: number = Date.now(),
+): boolean {
+  if (hospital.accesoAbreAt == null) return false;
+  return nowMs < hospital.accesoAbreAt.getTime();
+}
 
 /** True when accesoCierraAt is set and now is past that instant. */
 export function isTenantAccessClosed(
@@ -21,15 +32,22 @@ export function isTenantAccessClosed(
   return nowMs > hospital.accesoCierraAt.getTime();
 }
 
+/** Public UI status: not opened wins over closed when both bounds exist. */
+export function resolveTenantAccessEstado(
+  hospital: TenantAccessWindowHospital,
+  nowMs: number = Date.now(),
+): TenantAccessEstado {
+  if (isTenantAccessNotOpened(hospital, nowMs)) return 'no_abierto';
+  if (isTenantAccessClosed(hospital, nowMs)) return 'cerrado';
+  return 'abierto';
+}
+
 /** Fail open when accesoAbreAt is null. Before open → MSG_ACCESO_AUN_NO_ABIERTO. */
 export function assertTenantAccessOpened(
   hospital: Pick<TenantAccessWindowHospital, 'accesoAbreAt'>,
   nowMs: number = Date.now(),
 ): void {
-  if (
-    hospital.accesoAbreAt != null &&
-    nowMs < hospital.accesoAbreAt.getTime()
-  ) {
+  if (isTenantAccessNotOpened(hospital, nowMs)) {
     throw new ForbiddenException(MSG_ACCESO_AUN_NO_ABIERTO);
   }
 }

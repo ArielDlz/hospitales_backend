@@ -16,6 +16,8 @@ import { AuthService } from '../auth/auth.service';
 import { Hospital } from '../hospital/hospital.entity';
 import {
   isTenantAccessClosed,
+  isTenantAccessNotOpened,
+  MSG_ACCESO_AUN_NO_ABIERTO,
   MSG_ACCESO_FINALIZADO,
 } from '../hospital/tenant-access-window';
 import { JwtPayloadAspirante } from '../../common/interfaces/jwt-payload.interface';
@@ -337,8 +339,9 @@ export class PaymentsService {
   }
 
   /**
-   * After acceso_cierra_at: cancel this aspirante's unpaid Stripe intent (if any),
-   * mark local row canceled, then 403. Paid intents / succeeded confirms are not blocked here.
+   * Before acceso_abre_at: 403 without canceling Stripe intents.
+   * After acceso_cierra_at: cancel unpaid Stripe intent (if any), mark local row
+   * canceled, then 403. Paid intents / succeeded confirms are not blocked here.
    */
   private async rejectNewPaymentsIfTenantClosed(
     tenantId: string,
@@ -346,9 +349,17 @@ export class PaymentsService {
   ): Promise<void> {
     const hospital = await this.hospitalRepository.findOne({
       where: { uuid: tenantId, active: true },
-      select: ['accesoCierraAt'],
+      select: ['accesoAbreAt', 'accesoCierraAt'],
     });
-    if (!hospital || !isTenantAccessClosed(hospital)) {
+    if (!hospital) {
+      return;
+    }
+
+    if (isTenantAccessNotOpened(hospital)) {
+      throw new ForbiddenException(MSG_ACCESO_AUN_NO_ABIERTO);
+    }
+
+    if (!isTenantAccessClosed(hospital)) {
       return;
     }
 
