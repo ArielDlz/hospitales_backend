@@ -4,7 +4,6 @@ export interface ActivarCuentaEmailParams {
   telefono: string | null;
   registroHospital: string;
   activacionUrl: string;
-  expiraDias?: number;
 }
 
 export interface ActivarCuentaEmailContent {
@@ -27,7 +26,6 @@ export function buildActivarCuentaEmail(
     telefono,
     registroHospital,
     activacionUrl,
-    expiraDias = 7,
   } = params;
 
   const telefonoDisplay = telefono?.trim() || 'No indicado';
@@ -47,10 +45,6 @@ export function buildActivarCuentaEmail(
     `Apellido(s): ${apellidos}`,
     `Teléfono: ${telefonoDisplay}`,
     `Número de registro: ${registroHospital}`,
-    '',
-    `Este enlace caduca en ${expiraDias} días.`,
-    '',
-    'Si no has solicitado activar tu cuenta, puedes ignorar este correo.',
   ].join('\n');
 
   const html = `<!DOCTYPE html>
@@ -119,11 +113,8 @@ export function buildActivarCuentaEmail(
               <p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#4b5563;">
                 Si el botón no funciona, copia y pega este enlace en tu navegador:
               </p>
-              <p style="margin:0 0 24px;font-size:13px;line-height:1.5;word-break:break-all;">
+              <p style="margin:0;font-size:13px;line-height:1.5;word-break:break-all;">
                 <a href="${escapeHtml(activacionUrl)}" style="color:#2563eb;">${escapeHtml(activacionUrl)}</a>
-              </p>
-              <p style="margin:0;font-size:13px;line-height:1.5;color:#6b7280;">
-                Este enlace caduca en ${expiraDias} días. Si no has solicitado activar tu cuenta, puedes ignorar este correo.
               </p>
             </td>
           </tr>
