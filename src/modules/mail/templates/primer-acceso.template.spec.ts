@@ -33,6 +33,10 @@ describe('buildPrimerAccesoEmail', () => {
     );
     expect(text).toContain('García López');
     expect(text).toContain('5551234567');
+    expect(html).not.toContain('Este enlace caduca');
+    expect(html).not.toContain('puedes ignorar este correo');
+    expect(text).not.toContain('Este enlace caduca');
+    expect(text).not.toContain('puedes ignorar este correo');
   });
 
   it('should use recordatorio intro copy with same subject and CTA', () => {
@@ -61,7 +65,10 @@ describe('buildPrimerAccesoEmail', () => {
     expect(text).toContain(
       'Notamos que aún no has ingresado a la plataforma a realizar tu proceso de evaluación psicométrica',
     );
-    expect(text).toContain('Este enlace caduca en 7 días.');
+    expect(html).not.toContain('Este enlace caduca');
+    expect(html).not.toContain('puedes ignorar este correo');
+    expect(text).not.toContain('Este enlace caduca');
+    expect(text).not.toContain('puedes ignorar este correo');
   });
 
   it('should show placeholder when telefono is null', () => {
