@@ -146,6 +146,7 @@ export class AuthService {
     const payload: JwtPayloadAdmin = {
       sub: usuario.id,
       type: 'admin',
+      email: usuario.email,
       rol: usuario.rol,
       tenants,
       signature: usuario.firma != null && usuario.firma !== '',
@@ -211,7 +212,7 @@ export class AuthService {
   issueAspiranteAccessToken(params: {
     aspirante: Pick<
       Aspirante,
-      'id' | 'tenantId' | 'registroHospital' | 'nombre' | 'apellidos'
+      'id' | 'tenantId' | 'registroHospital' | 'nombre' | 'apellidos' | 'email'
     >;
     hospitalSlug: string;
     accesoCierraAt: Date | null;
@@ -221,6 +222,7 @@ export class AuthService {
     const payload: JwtPayloadAspirante = {
       sub: params.aspirante.id,
       type: 'aspirante',
+      email: params.aspirante.email,
       tenantId: params.aspirante.tenantId,
       slug: params.hospitalSlug,
       registro: params.aspirante.registroHospital,

@@ -1,21 +1,22 @@
 import {
   CallHandler,
   ExecutionContext,
-  HttpException,
   Injectable,
   Logger,
   NestInterceptor,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { Observable, throwError } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import {
-  isAdminPayload,
-  isAspirantePayload,
-  JwtPayload,
-} from '../interfaces/jwt-payload.interface';
-import { getRequestId } from '../request-context';
+  describeHttpError,
+  formatActor,
+  LoggedRequest,
+  REQUEST_ERROR_LOGGED_KEY,
+  serializeForLog,
+} from '../logging/request-log.util';
+import { getRequestElapsedMs, getRequestId } from '../request-context';
 
 const SKIP_EXACT = new Set(['/', '/api', '/api-json']);
 
@@ -27,33 +28,22 @@ function shouldSkip(method: string, path: string): boolean {
   return false;
 }
 
-function formatActor(user: JwtPayload | undefined): string {
-  if (!user) return 'actor=anonymous';
-  if (isAspirantePayload(user)) {
-    return [
-      'actor=aspirante',
-      `id=${user.sub}`,
-      `nombre=${user.nombre}`,
-      `slug=${user.slug}`,
-      `registro=${user.registro}`,
-      `flowOrderId=${user.evaluationFlowOrderId ?? '(n/a)'}`,
-    ].join(' ');
-  }
-  if (isAdminPayload(user)) {
-    return `actor=admin id=${user.sub} rol=${user.rol}`;
-  }
-  return 'actor=unknown';
+function endpointPath(req: LoggedRequest): string {
+  return req.originalUrl || req.url || '/';
 }
 
-function shortActor(user: JwtPayload | undefined): string {
-  if (!user) return 'actor=anonymous';
-  if (isAspirantePayload(user)) {
-    return `aspirante=${user.sub} slug=${user.slug}`;
-  }
-  if (isAdminPayload(user)) {
-    return `admin=${user.sub}`;
-  }
-  return 'actor=unknown';
+function handlerName(context: ExecutionContext): string {
+  const controller = context.getClass()?.name;
+  const handler = context.getHandler()?.name;
+  if (controller && handler) return `${controller}.${handler}`;
+  return handler || controller || '(unknown)';
+}
+
+function hasLoggableBody(body: unknown): boolean {
+  if (body === undefined || body === null) return false;
+  if (typeof body !== 'object') return true;
+  if (Array.isArray(body)) return body.length > 0;
+  return Object.keys(body).length > 0;
 }
 
 @Injectable()
@@ -66,43 +56,40 @@ export class RequestLoggingInterceptor implements NestInterceptor {
     }
 
     const http = context.switchToHttp();
-    const req = http.getRequest<Request & { user?: JwtPayload }>();
+    const req = http.getRequest<LoggedRequest>();
     const res = http.getResponse<Response>();
     const method = req.method;
-    const path = req.originalUrl?.split('?')[0] || req.url?.split('?')[0] || '/';
+    const path = endpointPath(req);
 
     if (shouldSkip(method, path)) {
       return next.handle();
     }
 
-    // Prefer ALS from RequestContextMiddleware; fallback only if middleware missed.
     const requestId = getRequestId() ?? randomUUID().slice(0, 8);
-    const startedAt = Date.now();
-    const actorLine = formatActor(req.user);
-    const actorShort = shortActor(req.user);
+    const actorLine = formatActor(req.user, req.body);
+    const handler = handlerName(context);
 
     this.logger.log(
-      `---------- Start request [${requestId}] ${method} ${path} ----------`,
+      `[${requestId}] START ${method} ${path} handler=${handler} ${actorLine}`,
     );
-    this.logger.log(`[${requestId}] ${actorLine}`);
+
+    if (hasLoggableBody(req.body)) {
+      this.logger.log(`[${requestId}] request=${serializeForLog(req.body)}`);
+    }
 
     return next.handle().pipe(
-      tap(() => {
-        const durationMs = Date.now() - startedAt;
+      tap((data) => {
+        const durationMs = getRequestElapsedMs() ?? 0;
         this.logger.log(
-          `---------- End request [${requestId}] ${res.statusCode} ${durationMs}ms ${actorShort} ----------`,
+          `[${requestId}] END ${res.statusCode} ${durationMs}ms ${actorLine} response=${serializeForLog(data)}`,
         );
       }),
       catchError((err: unknown) => {
-        const durationMs = Date.now() - startedAt;
-        const status =
-          err instanceof HttpException
-            ? err.getStatus()
-            : res.statusCode || 500;
-        const errorName =
-          err instanceof Error ? err.constructor.name : 'Error';
+        req[REQUEST_ERROR_LOGGED_KEY] = true;
+        const durationMs = getRequestElapsedMs() ?? 0;
+        const info = describeHttpError(err);
         this.logger.warn(
-          `---------- End request [${requestId}] ${status} ${durationMs}ms ${actorShort} error=${errorName} ----------`,
+          `[${requestId}] ERROR ${info.status} ${durationMs}ms ${method} ${path} ${actorLine} error=${info.name} message=${info.message} response=${serializeForLog(info.response)}`,
         );
         return throwError(() => err);
       }),

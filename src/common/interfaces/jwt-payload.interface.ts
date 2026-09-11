@@ -3,6 +3,8 @@ import { RolUsuarioAdmin } from '../enums/rol-usuario-admin.enum';
 export interface JwtPayloadAdmin {
   sub: string;
   type: 'admin';
+  /** Email del administrador/evaluador (tokens antiguos pueden no traerlo) */
+  email?: string;
   rol: RolUsuarioAdmin;
   tenants?: string[];
   /** true si el usuario tiene firma (URL no vacía) en la base de datos */
@@ -18,6 +20,8 @@ export interface JwtPayloadAdmin {
 export interface JwtPayloadAspirante {
   sub: string;
   type: 'aspirante';
+  /** Email del aspirante (tokens antiguos pueden no traerlo) */
+  email?: string;
   tenantId: string;
   slug: string;
   registro: string;
