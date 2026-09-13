@@ -423,7 +423,7 @@ export class EvaluacionesService {
       veredictoEtiqueta: veredicto.etiqueta,
       veredictoCodigo: veredicto.codigo,
       fechaInforme: new Date(),
-      firmaUrl: stampSigner.firma,
+      firmaUrl: stampSigner.firma ?? undefined,
       nombreFirmante,
       cedulaProfesional: stampSigner.cedulaProfesional,
     });
