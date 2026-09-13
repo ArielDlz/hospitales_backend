@@ -22,6 +22,11 @@ import { PruebasService } from '../pruebas/pruebas.service';
 import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import { ProcesoPrueba } from '../pruebas/entities/prueba-aspirante.entity';
+import * as informeSignerDelegate from './informe-signer-delegate';
+import {
+  INFORME_SIGNER_DELEGATE_RULES,
+  MSG_FIRMANTE_DELEGADO_NO_DISPONIBLE,
+} from './informe-signer-delegate';
 
 describe('EvaluacionesService', () => {
   let service: EvaluacionesService;
@@ -59,6 +64,7 @@ describe('EvaluacionesService', () => {
   };
   const usuarioRepo = {
     findOne: jest.fn(),
+    find: jest.fn(),
   };
   const pruebasService = {
     buildPreguntasActivasByPrueba: jest.fn().mockResolvedValue([]),
@@ -177,6 +183,7 @@ describe('EvaluacionesService', () => {
     pruebaAspiranteRepo.find.mockResolvedValue([]);
     aspiranteEvaluacionRepo.findOne.mockResolvedValue(null);
     usuarioRepo.findOne.mockResolvedValue({ email: 'evaluador-a@hospital.com' });
+    usuarioRepo.find.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -733,6 +740,201 @@ describe('EvaluacionesService', () => {
       await expect(
         service.firmarInforme(aspiranteId, evaluadorB),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    describe('delegación de firma', () => {
+      const rule = INFORME_SIGNER_DELEGATE_RULES[0];
+      const substituteAId = rule.substituteUserIds[0];
+      const substituteBId = rule.substituteUserIds[1];
+
+      const delegateUser = {
+        sub: rule.actingUserId,
+        type: 'admin' as const,
+        rol: RolUsuarioAdmin.Evaluador,
+        tenants: [rule.tenantId, tenantId],
+        signature: true,
+        supervisorId: null as string | null,
+        supervisedUserIds: [] as string[],
+      };
+
+      const substituteA = {
+        id: substituteAId,
+        nombre: 'Firmante Delegado A',
+        firma: 'https://example.com/firma-a.png',
+        email: 'delegado-a@hospital.com',
+        cedulaProfesional: '1111111',
+      };
+      const substituteB = {
+        id: substituteBId,
+        nombre: 'Firmante Delegado B',
+        firma: 'https://example.com/firma-b.png',
+        email: 'delegado-b@hospital.com',
+        cedulaProfesional: '2222222',
+      };
+
+      const actingSigner = {
+        nombre: 'Evaluador Delegador',
+        firma: 'https://example.com/firma-acting.png',
+        email: 'delegador@hospital.com',
+        cedulaProfesional: '9999999',
+      };
+
+      const aspiranteOnDelegateTenant = {
+        ...aspiranteStep7,
+        tenantId: rule.tenantId,
+        idEvaluadorAsignado: rule.actingUserId,
+      };
+
+      beforeEach(() => {
+        usuarioRepo.findOne.mockImplementation(
+          async (opts: { where: { id: string }; select?: string[] }) => {
+            if (opts.where.id === rule.actingUserId) {
+              return actingSigner;
+            }
+            if (opts.where.id === 'admin-uuid') {
+              return {
+                nombre: 'Admin Firmante',
+                firma: 'https://example.com/firma.png',
+                email: 'admin@hospital.com',
+                cedulaProfesional: '6824419',
+              };
+            }
+            if (opts.where.id === supervisorId) {
+              return {
+                nombre: 'Supervisor Firmante',
+                firma: 'https://example.com/firma-sup.png',
+                email: 'supervisor@hospital.com',
+                cedulaProfesional: '1122334',
+              };
+            }
+            if (opts.where.id === evaluadorAId) {
+              if (opts.select?.includes('supervisorId')) {
+                return { supervisorId };
+              }
+              return { email: 'evaluador-a@hospital.com' };
+            }
+            return null;
+          },
+        );
+      });
+
+      afterEach(() => {
+        jest.restoreAllMocks();
+      });
+
+      it('usa sello y email del sustituto elegido al azar', async () => {
+        aspiranteRepo.findOne.mockResolvedValue(aspiranteOnDelegateTenant);
+        usuarioRepo.find.mockResolvedValue([substituteB, substituteA]);
+        jest
+          .spyOn(informeSignerDelegate, 'pickRandomItem')
+          .mockReturnValue(substituteA);
+
+        await service.firmarInforme(aspiranteId, delegateUser);
+
+        expect(informeSignerDelegate.pickRandomItem).toHaveBeenCalledWith([
+          substituteA,
+          substituteB,
+        ]);
+        expect(informePdfService.buildPdf).toHaveBeenCalledWith(
+          expect.objectContaining({
+            emailEvaluador: substituteA.email,
+            firmaUrl: substituteA.firma,
+            nombreFirmante: substituteA.nombre,
+            cedulaProfesional: substituteA.cedulaProfesional,
+          }),
+        );
+      });
+
+      it('403 si el evaluador logueado no tiene firma aunque los sustitutos sí', async () => {
+        aspiranteRepo.findOne.mockResolvedValue(aspiranteOnDelegateTenant);
+        usuarioRepo.findOne.mockResolvedValue({
+          nombre: 'Sin Firma',
+          firma: null,
+          email: 'delegador@hospital.com',
+          cedulaProfesional: null,
+        });
+        usuarioRepo.find.mockResolvedValue([substituteA, substituteB]);
+
+        await expect(
+          service.firmarInforme(aspiranteId, delegateUser),
+        ).rejects.toThrow('Solo usuarios con firma pueden firmar informes');
+        expect(usuarioRepo.find).not.toHaveBeenCalled();
+        expect(informePdfService.buildPdf).not.toHaveBeenCalled();
+      });
+
+      it('403 si ningún sustituto tiene firma', async () => {
+        aspiranteRepo.findOne.mockResolvedValue(aspiranteOnDelegateTenant);
+        usuarioRepo.find.mockResolvedValue([
+          { ...substituteA, firma: null },
+          { ...substituteB, firma: '   ' },
+        ]);
+
+        await expect(
+          service.firmarInforme(aspiranteId, delegateUser),
+        ).rejects.toThrow(MSG_FIRMANTE_DELEGADO_NO_DISPONIBLE);
+        expect(informePdfService.buildPdf).not.toHaveBeenCalled();
+      });
+
+      it('mismo evaluador en otro tenant conserva su sello y el email del asignado', async () => {
+        aspiranteRepo.findOne.mockResolvedValue({
+          ...aspiranteStep7,
+          idEvaluadorAsignado: rule.actingUserId,
+        });
+        usuarioRepo.find.mockResolvedValue([substituteA, substituteB]);
+
+        await service.firmarInforme(aspiranteId, {
+          ...delegateUser,
+          tenants: [tenantId],
+        });
+
+        expect(usuarioRepo.find).not.toHaveBeenCalled();
+        expect(informePdfService.buildPdf).toHaveBeenCalledWith(
+          expect.objectContaining({
+            emailEvaluador: 'evaluador-a@hospital.com',
+            firmaUrl: actingSigner.firma,
+            nombreFirmante: actingSigner.nombre,
+            cedulaProfesional: actingSigner.cedulaProfesional,
+          }),
+        );
+      });
+
+      it('admin en el tenant de la regla no cambia el sello', async () => {
+        aspiranteRepo.findOne.mockResolvedValue({
+          ...aspiranteStep7,
+          tenantId: rule.tenantId,
+        });
+
+        await service.firmarInforme(aspiranteId, adminUser);
+
+        expect(usuarioRepo.find).not.toHaveBeenCalled();
+        expect(informePdfService.buildPdf).toHaveBeenCalledWith(
+          expect.objectContaining({
+            emailEvaluador: 'evaluador-a@hospital.com',
+            firmaUrl: 'https://example.com/firma.png',
+            nombreFirmante: 'Admin Firmante',
+            cedulaProfesional: '6824419',
+          }),
+        );
+      });
+
+      it('supervisor en el tenant de la regla no cambia el sello', async () => {
+        aspiranteRepo.findOne.mockResolvedValue({
+          ...aspiranteStep7,
+          tenantId: rule.tenantId,
+        });
+
+        await service.firmarInforme(aspiranteId, supervisorUser);
+
+        expect(usuarioRepo.find).not.toHaveBeenCalled();
+        expect(informePdfService.buildPdf).toHaveBeenCalledWith(
+          expect.objectContaining({
+            emailEvaluador: 'evaluador-a@hospital.com',
+            firmaUrl: 'https://example.com/firma-sup.png',
+            nombreFirmante: 'Supervisor Firmante',
+            cedulaProfesional: '1122334',
+          }),
+        );
+      });
     });
   });
 

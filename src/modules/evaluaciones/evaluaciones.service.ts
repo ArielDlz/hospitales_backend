@@ -39,6 +39,11 @@ import {
   buildInformeFirmadoS3Key,
   resolveInformeFirmadoFilename,
 } from './informe-firmado-filename.util';
+import {
+  MSG_FIRMANTE_DELEGADO_NO_DISPONIBLE,
+  pickRandomItem,
+  resolveInformeSignerCandidates,
+} from './informe-signer-delegate';
 
 const ISO_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})/;
 
@@ -367,20 +372,45 @@ export class EvaluacionesService {
     const aspirante = await this.loadAspiranteWithFlow(aspiranteId);
     await this.assertCanAccessForFirma(user, aspirante);
 
-    const signer = await this.usuarioRepository.findOne({
+    const actingSigner = await this.usuarioRepository.findOne({
       where: { id: user.sub },
       select: ['nombre', 'firma', 'email', 'cedulaProfesional'],
     });
-    if (!signer?.firma?.trim()) {
+    if (!actingSigner?.firma?.trim()) {
       throw new ForbiddenException(
         'Solo usuarios con firma pueden firmar informes',
       );
     }
 
-    const { evaluacion, veredicto, emailEvaluador } =
+    const { evaluacion, veredicto, emailEvaluador: assignedEmailEvaluador } =
       await this.loadInformePdfContext(aspiranteId);
 
-    const nombreFirmante = signer.nombre?.trim() || signer.email;
+    let stampSigner = actingSigner;
+    let emailEvaluador = assignedEmailEvaluador;
+
+    const signerCandidates = resolveInformeSignerCandidates(
+      user.sub,
+      aspirante.tenantId,
+    );
+    if (signerCandidates.delegated) {
+      const substitutes = await this.usuarioRepository.find({
+        where: { id: In(signerCandidates.candidateIds) },
+        select: ['id', 'nombre', 'firma', 'email', 'cedulaProfesional'],
+      });
+      const byId = new Map(substitutes.map((row) => [row.id, row]));
+      const withFirma = signerCandidates.candidateIds
+        .map((id) => byId.get(id))
+        .filter((row): row is UsuarioAdministrativo =>
+          Boolean(row?.firma?.trim()),
+        );
+      if (withFirma.length === 0) {
+        throw new ForbiddenException(MSG_FIRMANTE_DELEGADO_NO_DISPONIBLE);
+      }
+      stampSigner = pickRandomItem(withFirma);
+      emailEvaluador = stampSigner.email;
+    }
+
+    const nombreFirmante = stampSigner.nombre?.trim() || stampSigner.email;
     const buffer = await this.informePdfService.buildPdf({
       nombre: aspirante.nombre,
       apellidos: aspirante.apellidos,
@@ -393,9 +423,9 @@ export class EvaluacionesService {
       veredictoEtiqueta: veredicto.etiqueta,
       veredictoCodigo: veredicto.codigo,
       fechaInforme: new Date(),
-      firmaUrl: signer.firma,
+      firmaUrl: stampSigner.firma,
       nombreFirmante,
-      cedulaProfesional: signer.cedulaProfesional,
+      cedulaProfesional: stampSigner.cedulaProfesional,
     });
 
     const hospital = await this.hospitalRepository.findOne({
