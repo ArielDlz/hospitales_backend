@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 
 export type RequestContextStore = {
   requestId: string;
+  startedAt?: number;
 };
 
 const requestContext = new AsyncLocalStorage<RequestContextStore>();
@@ -20,4 +21,9 @@ export function runWithRequestContext<T>(
 
 export function getRequestId(): string | undefined {
   return requestContext.getStore()?.requestId;
+}
+
+export function getRequestElapsedMs(): number | undefined {
+  const startedAt = requestContext.getStore()?.startedAt;
+  return typeof startedAt === 'number' ? Date.now() - startedAt : undefined;
 }

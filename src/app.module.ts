@@ -1,11 +1,12 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as Joi from 'joi';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { RequestLoggingExceptionFilter } from './common/filters/request-logging-exception.filter';
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { HospitalModule } from './modules/hospital/hospital.module';
@@ -87,6 +88,10 @@ import { SolicitudesAccesoModule } from './modules/solicitudes-acceso/solicitude
     {
       provide: APP_INTERCEPTOR,
       useClass: RequestLoggingInterceptor,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: RequestLoggingExceptionFilter,
     },
   ],
 })
