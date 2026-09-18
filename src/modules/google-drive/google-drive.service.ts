@@ -1,4 +1,3 @@
-import { Readable } from 'stream';
 import {
   BadRequestException,
   HttpException,
@@ -8,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { google, drive_v3 } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 import { GoogleDriveOauth } from './google-drive-oauth.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
@@ -19,9 +18,14 @@ import {
   isTenantDriveEnabled,
   parseEnabledTenantIds,
 } from './google-drive-tenants';
+import {
+  createFolder,
+  getAboutEmail,
+  listChildFolders,
+  uploadPdf,
+} from './google-drive-rest';
 
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
-const FOLDER_MIME = 'application/vnd.google-apps.folder';
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const ROOT_PARENT = 'root';
 
 export type UploadSignedInformeParams = {
@@ -142,43 +146,29 @@ export class GoogleDriveService {
     params: UploadSignedInformeParams,
   ): Promise<UploadSignedInformeResult> {
     try {
-      const drive = await this.getDriveClient();
+      const accessToken = await this.getAccessToken();
       const hospitalFolderId = await this.ensureFolder(
-        drive,
+        accessToken,
         ROOT_PARENT,
         params.hospitalNombre,
       );
       const modalidadFolderId = await this.ensureFolder(
-        drive,
+        accessToken,
         hospitalFolderId,
         params.modalidad,
       );
       const especialidadFolderId = await this.ensureFolder(
-        drive,
+        accessToken,
         modalidadFolderId,
         params.especialidad,
       );
 
-      const created = await drive.files.create({
-        requestBody: {
-          name: params.filename,
-          parents: [especialidadFolderId],
-        },
-        media: {
-          mimeType: 'application/pdf',
-          body: Readable.from(params.buffer),
-        },
-        fields: 'id, webViewLink',
+      return await uploadPdf({
+        accessToken,
+        parentId: especialidadFolderId,
+        filename: params.filename,
+        buffer: params.buffer,
       });
-
-      const fileId = created.data.id?.trim();
-      const webViewLink = created.data.webViewLink?.trim();
-      if (!fileId || !webViewLink) {
-        throw new ServiceUnavailableException(
-          'Google Drive no devolvió el archivo subido',
-        );
-      }
-      return { fileId, webViewLink };
     } catch (err) {
       if (err instanceof HttpException) {
         throw err;
@@ -189,78 +179,46 @@ export class GoogleDriveService {
     }
   }
 
-  private async readConnectedEmail(
-    client: InstanceType<typeof google.auth.OAuth2>,
-  ): Promise<string | null> {
+  private async readConnectedEmail(client: OAuth2Client): Promise<string | null> {
     try {
-      const drive = google.drive({ version: 'v3', auth: client });
-      const about = await drive.about.get({ fields: 'user(emailAddress)' });
-      return about.data.user?.emailAddress ?? null;
+      const accessToken = await this.accessTokenFromClient(client);
+      return await getAboutEmail(accessToken);
     } catch {
       return null;
     }
   }
 
-  private async getDriveClient(): Promise<drive_v3.Drive> {
+  private async getAccessToken(): Promise<string> {
     const connection = await this.findConnection();
     if (!connection?.refreshToken?.trim()) {
       throw new ServiceUnavailableException('Google Drive no está conectado');
     }
     const client = this.createOAuthClient();
     client.setCredentials({ refresh_token: connection.refreshToken });
-    return google.drive({ version: 'v3', auth: client });
+    return this.accessTokenFromClient(client);
+  }
+
+  private async accessTokenFromClient(client: OAuth2Client): Promise<string> {
+    const { token } = await client.getAccessToken();
+    if (!token?.trim()) {
+      throw new ServiceUnavailableException(
+        'No se pudo obtener el token de Google Drive',
+      );
+    }
+    return token;
   }
 
   private async ensureFolder(
-    drive: drive_v3.Drive,
+    accessToken: string,
     parentId: string,
     name: string,
   ): Promise<string> {
-    const folders = await this.listChildFolders(drive, parentId);
+    const folders = await listChildFolders(accessToken, parentId);
     const existingId = findFolderIdByNameCaseInsensitive(folders, name);
     if (existingId) {
       return existingId;
     }
-
-    const created = await drive.files.create({
-      requestBody: {
-        name,
-        mimeType: FOLDER_MIME,
-        parents: [parentId],
-      },
-      fields: 'id, name',
-    });
-    const id = created.data.id?.trim();
-    if (!id) {
-      throw new ServiceUnavailableException(
-        'Google Drive no pudo crear la carpeta',
-      );
-    }
-    return id;
-  }
-
-  private async listChildFolders(
-    drive: drive_v3.Drive,
-    parentId: string,
-  ): Promise<Array<{ id?: string | null; name?: string | null }>> {
-    const folders: Array<{ id?: string | null; name?: string | null }> = [];
-    let pageToken: string | undefined;
-    const escapedParent = parentId.replace(/'/g, "\\'");
-    const q = `'${escapedParent}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
-
-    do {
-      const res = await drive.files.list({
-        q,
-        fields: 'nextPageToken, files(id, name)',
-        pageSize: 1000,
-        pageToken,
-        spaces: 'drive',
-      });
-      folders.push(...(res.data.files ?? []));
-      pageToken = res.data.nextPageToken ?? undefined;
-    } while (pageToken);
-
-    return folders;
+    return createFolder(accessToken, parentId, name);
   }
 
   private async findConnection(): Promise<GoogleDriveOauth | null> {
@@ -271,7 +229,7 @@ export class GoogleDriveService {
     return rows[0] ?? null;
   }
 
-  private createOAuthClient(): InstanceType<typeof google.auth.OAuth2> {
+  private createOAuthClient(): OAuth2Client {
     const clientId = this.configService
       .get<string>('GOOGLE_OAUTH_CLIENT_ID', '')
       .trim();
@@ -286,6 +244,6 @@ export class GoogleDriveService {
         'Google Drive no está configurado',
       );
     }
-    return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    return new OAuth2Client(clientId, clientSecret, redirectUri);
   }
 }

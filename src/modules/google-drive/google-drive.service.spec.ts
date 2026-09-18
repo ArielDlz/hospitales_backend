@@ -5,53 +5,42 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { google } from 'googleapis';
-import { GoogleDriveService } from './google-drive.service';
+import { OAuth2Client } from 'google-auth-library';
+import { GoogleDriveService, DRIVE_SCOPE } from './google-drive.service';
 import { GoogleDriveOauth } from './google-drive-oauth.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import type { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
+import * as driveRest from './google-drive-rest';
 
-jest.mock('googleapis', () => {
+jest.mock('google-auth-library', () => {
   const oauthClient = {
     generateAuthUrl: jest.fn().mockReturnValue(
       'https://accounts.google.com/o/oauth2/v2/auth?mock=1',
     ),
     getToken: jest.fn(),
     setCredentials: jest.fn(),
-  };
-  const driveApi = {
-    files: {
-      list: jest.fn(),
-      create: jest.fn(),
-    },
-    about: {
-      get: jest.fn(),
-    },
+    getAccessToken: jest.fn().mockResolvedValue({ token: 'access-token' }),
   };
   return {
-    google: {
-      auth: {
-        OAuth2: jest.fn().mockImplementation(() => oauthClient),
-      },
-      drive: jest.fn(() => driveApi),
-    },
+    OAuth2Client: jest.fn().mockImplementation(() => oauthClient),
   };
 });
 
+jest.mock('./google-drive-rest', () => ({
+  getAboutEmail: jest.fn(),
+  listChildFolders: jest.fn(),
+  createFolder: jest.fn(),
+  uploadPdf: jest.fn(),
+}));
+
 function oauthClient() {
-  return new (google.auth.OAuth2 as unknown as new () => {
+  return new (OAuth2Client as unknown as new () => {
     generateAuthUrl: jest.Mock;
     getToken: jest.Mock;
     setCredentials: jest.Mock;
+    getAccessToken: jest.Mock;
   })();
-}
-
-function driveApi() {
-  return google.drive({ version: 'v3' }) as unknown as {
-    files: { list: jest.Mock; create: jest.Mock };
-    about: { get: jest.Mock };
-  };
 }
 
 describe('GoogleDriveService', () => {
@@ -91,6 +80,7 @@ describe('GoogleDriveService', () => {
     oauthClient().generateAuthUrl.mockReturnValue(
       'https://accounts.google.com/o/oauth2/v2/auth?mock=1',
     );
+    oauthClient().getAccessToken.mockResolvedValue({ token: 'access-token' });
     oauthRepo.find.mockResolvedValue([]);
     usuarioRepo.findOne.mockResolvedValue({ id: 'super-1', isSuperuser: true });
     configService.get.mockImplementation(
@@ -141,7 +131,7 @@ describe('GoogleDriveService', () => {
     expect(oauthClient().generateAuthUrl).toHaveBeenCalledWith({
       access_type: 'offline',
       prompt: 'consent',
-      scope: ['https://www.googleapis.com/auth/drive'],
+      scope: [DRIVE_SCOPE],
     });
   });
 
@@ -170,9 +160,9 @@ describe('GoogleDriveService', () => {
     oauthClient().getToken.mockResolvedValue({
       tokens: { refresh_token: 'rt-new', access_token: 'at' },
     });
-    driveApi().about.get.mockResolvedValue({
-      data: { user: { emailAddress: 'hospital@gmail.com' } },
-    });
+    (driveRest.getAboutEmail as jest.Mock).mockResolvedValue(
+      'hospital@gmail.com',
+    );
     oauthRepo.save.mockImplementation(async (row) => row);
 
     const result = await service.connectWithCode('ok-code', 'super-1');
@@ -208,21 +198,13 @@ describe('GoogleDriveService', () => {
 
   it('uploadSignedInforme reusa carpetas existentes y sube el PDF', async () => {
     oauthRepo.find.mockResolvedValue([{ refreshToken: 'rt' }]);
-    driveApi().files.list
-      .mockResolvedValueOnce({
-        data: { files: [{ id: 'hosp-id', name: 'hospital-general' }] },
-      })
-      .mockResolvedValueOnce({
-        data: { files: [{ id: 'mod-id', name: 'PRESENCIAL' }] },
-      })
-      .mockResolvedValueOnce({
-        data: { files: [{ id: 'esp-id', name: 'cardiologia' }] },
-      });
-    driveApi().files.create.mockResolvedValue({
-      data: {
-        id: 'file-99',
-        webViewLink: 'https://drive.google.com/file/d/file-99/view',
-      },
+    (driveRest.listChildFolders as jest.Mock)
+      .mockResolvedValueOnce([{ id: 'hosp-id', name: 'hospital-general' }])
+      .mockResolvedValueOnce([{ id: 'mod-id', name: 'PRESENCIAL' }])
+      .mockResolvedValueOnce([{ id: 'esp-id', name: 'cardiologia' }]);
+    (driveRest.uploadPdf as jest.Mock).mockResolvedValue({
+      fileId: 'file-99',
+      webViewLink: 'https://drive.google.com/file/d/file-99/view',
     });
 
     const result = await service.uploadSignedInforme({
@@ -237,6 +219,7 @@ describe('GoogleDriveService', () => {
       fileId: 'file-99',
       webViewLink: 'https://drive.google.com/file/d/file-99/view',
     });
-    expect(driveApi().files.create).toHaveBeenCalledTimes(1);
+    expect(driveRest.uploadPdf).toHaveBeenCalledTimes(1);
+    expect(driveRest.createFolder).not.toHaveBeenCalled();
   });
 });
