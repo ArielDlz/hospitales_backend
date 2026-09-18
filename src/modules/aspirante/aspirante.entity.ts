@@ -84,4 +84,13 @@ export class Aspirante extends TenantBaseEntity {
 
   @Column({ type: 'text', nullable: true, name: 'stripe_customer_id' })
   stripeCustomerId: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'payment_link' })
+  paymentLink: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'payment_reference' })
+  paymentReference: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true, name: 'claimed_at' })
+  claimedAt: Date | null;
 }

@@ -2,12 +2,13 @@ import Stripe from 'stripe';
 import {
   BadRequestException,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { PaymentsService } from './payments.service';
-import { Payment, PaymentStatus } from './entities/payment.entity';
+import { Payment, PaymentProvider, PaymentStatus } from './entities/payment.entity';
 import { Aspirante } from '../aspirante/aspirante.entity';
 import { Hospital } from '../hospital/hospital.entity';
 import { AuthService } from '../auth/auth.service';
@@ -124,6 +125,8 @@ describe('PaymentsService', () => {
     apellidos: 'Pérez',
     registroHospital: 'REG-001',
     stripeCustomerId: null as string | null,
+    paymentLink: null as string | null,
+    claimedAt: null as Date | null,
     evaluationFlowStep: { orderId: 2 },
   };
 
@@ -177,6 +180,8 @@ describe('PaymentsService', () => {
   };
 
   const intentResponseShape = {
+    provider: 'stripe' as const,
+    paymentLink: null,
     publishableKey: 'pk_test_xxx',
     returnUrl: 'https://hospital-general.arieldelao.dev/pago/exito',
     clientSecret: 'pi_test_secret',
@@ -530,6 +535,39 @@ describe('PaymentsService', () => {
       expect(paymentRepo.save).not.toHaveBeenCalled();
       expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
     });
+
+    it('con payment_link devuelve payload Banorte y no crea PaymentIntent', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteAtPaymentStep,
+        paymentLink: 'https://banorte.example/pay',
+      });
+      paymentRepo.findOne.mockResolvedValue({
+        status: PaymentStatus.Pending,
+        stripePaymentIntentId: 'pi_existing',
+      });
+
+      const result = await service.createPaymentIntent(user);
+
+      expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+      expect(mockPaymentIntentsRetrieve).not.toHaveBeenCalled();
+      expect(mockPaymentIntentsCancel).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        provider: 'banorte',
+        paymentLink: 'https://banorte.example/pay',
+        publishableKey: null,
+        returnUrl: null,
+        clientSecret: null,
+        paymentIntentId: null,
+        amountCents: PAYMENT_AMOUNT_CENTS,
+        currency: 'mxn',
+        productName: PRODUCT_NAME,
+        productDescription: PRODUCT_DESCRIPTION,
+        stripePriceId: null,
+        status: null,
+        requestThreeDSecure: null,
+        billingDefaults: null,
+      });
+    });
   });
 
   describe('handleWebhook', () => {
@@ -599,6 +637,7 @@ describe('PaymentsService', () => {
 
   describe('confirmPayment', () => {
     it('rechaza si el pago requiere acción 3DS', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({ ...aspiranteAtPaymentStep });
       mockPaymentIntentsRetrieve.mockResolvedValue({
         id: 'pi_test',
         status: 'requires_action',
@@ -612,7 +651,20 @@ describe('PaymentsService', () => {
       );
     });
 
+    it('rechaza confirm Stripe si el aspirante tiene liga Banorte', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteAtPaymentStep,
+        paymentLink: 'https://banorte.example/pay',
+      });
+
+      await expect(service.confirmPayment(user, 'pi_test')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockPaymentIntentsRetrieve).not.toHaveBeenCalled();
+    });
+
     it('tras cierre rechaza confirm no succeeded y cancela intent impago', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({ ...aspiranteAtPaymentStep });
       mockPaymentIntentsRetrieve.mockResolvedValue({
         id: 'pi_open',
         status: 'requires_payment_method',
@@ -663,6 +715,7 @@ describe('PaymentsService', () => {
         nombre: 'Juan',
         apellidos: 'Pérez',
         registroHospital: 'REG-001',
+        paymentLink: null,
         evaluationFlowStep: { orderId: 3, descripcion: 'Pagado' },
       });
       hospitalRepo.findOne.mockResolvedValue({
@@ -701,6 +754,7 @@ describe('PaymentsService', () => {
         nombre: 'Juan',
         apellidos: 'Pérez',
         registroHospital: 'REG-001',
+        paymentLink: null,
         evaluationFlowStep: { orderId: 3, descripcion: 'Pagado' },
       });
       hospitalRepo.findOne.mockResolvedValue({
@@ -713,6 +767,130 @@ describe('PaymentsService', () => {
       expect(result.paid).toBe(true);
       expect(evaluationFlowService.advanceOneStepIfAt).toHaveBeenCalled();
       expect(mockPaymentIntentsCancel).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('claimPayment', () => {
+    it('guarda claimed_at y no avanza el flujo', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteAtPaymentStep,
+        paymentLink: 'https://banorte.example/pay',
+        claimedAt: null,
+      });
+      paymentRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.claimPayment(user);
+
+      expect(aspiranteRepo.update).toHaveBeenCalledWith(
+        { id: aspiranteId },
+        { claimedAt: expect.any(Date) },
+      );
+      expect(result.claimedAt).toBeInstanceOf(Date);
+      expect(evaluationFlowService.advanceOneStepIfAt).not.toHaveBeenCalled();
+      expect(paymentRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('segunda vez conserva el primer claimed_at', async () => {
+      const firstClaim = new Date('2026-09-01T00:00:00.000Z');
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteAtPaymentStep,
+        paymentLink: 'https://banorte.example/pay',
+        claimedAt: firstClaim,
+      });
+      paymentRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.claimPayment(user);
+
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+      expect(result.claimedAt).toBe(firstClaim);
+    });
+
+    it('409 si el pago ya estaba pagado', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteAtPaymentStep,
+        paymentLink: 'https://banorte.example/pay',
+      });
+      paymentRepo.findOne.mockResolvedValue({ status: PaymentStatus.Paid });
+
+      await expect(service.claimPayment(user)).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('confirmBanortePayment', () => {
+    const banorteAspirante = {
+      ...aspiranteAtPaymentStep,
+      paymentLink: 'https://banorte.example/pay',
+    };
+
+    it('marca pagado, provider banorte y avanza 2→3', async () => {
+      aspiranteRepo.findOne
+        .mockResolvedValueOnce(banorteAspirante)
+        .mockResolvedValueOnce({
+          ...banorteAspirante,
+          evaluationFlowStep: { orderId: 3 },
+        });
+      paymentRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.confirmBanortePayment(aspiranteId);
+
+      expect(paymentRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: PaymentStatus.Paid,
+          provider: PaymentProvider.Banorte,
+          amountCents: PAYMENT_AMOUNT_CENTS,
+          currency: 'mxn',
+        }),
+      );
+      expect(evaluationFlowService.advanceOneStepIfAt).toHaveBeenCalledWith(
+        aspiranteId,
+        2,
+        'payments:banorte_admin',
+      );
+      expect(result).toEqual({ paid: true, evaluationFlowOrderId: 3 });
+      expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+    });
+
+    it('rechaza si no hay payment_link', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteAtPaymentStep,
+        paymentLink: null,
+      });
+
+      await expect(service.confirmBanortePayment(aspiranteId)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(paymentRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('404 si el aspirante no existe', async () => {
+      aspiranteRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.confirmBanortePayment(aspiranteId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('es idempotente si el pago ya estaba pagado', async () => {
+      aspiranteRepo.findOne
+        .mockResolvedValueOnce(banorteAspirante)
+        .mockResolvedValueOnce({
+          ...banorteAspirante,
+          evaluationFlowStep: { orderId: 3 },
+        });
+      paymentRepo.findOne.mockResolvedValue({
+        status: PaymentStatus.Paid,
+        provider: PaymentProvider.Banorte,
+      });
+
+      const result = await service.confirmBanortePayment(aspiranteId);
+
+      expect(paymentRepo.save).not.toHaveBeenCalled();
+      expect(evaluationFlowService.advanceOneStepIfAt).toHaveBeenCalledWith(
+        aspiranteId,
+        2,
+        'payments:banorte_admin',
+      );
+      expect(result).toEqual({ paid: true, evaluationFlowOrderId: 3 });
     });
   });
 });
