@@ -26,6 +26,8 @@ import { Payment } from '../payments/entities/payment.entity';
 import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
 import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
 import { EvaluationFlowService } from './evaluation-flow.service';
+import { buildEnviarAlHospitalFlags } from '../google-drive/enviar-al-hospital.flags';
+import { parseEnabledTenantIds } from '../google-drive/google-drive-tenants';
 type AspirantePublic = Omit<
   Aspirante,
   'passwordHash' | 'primerAccesoToken' | 'evaluationFlowStep'
@@ -37,6 +39,8 @@ type AspiranteWithHospitalName = AspirantePublic & {
   nombreCompleto: string;
   canEvaluar: boolean;
   evaluadorAsignadoEmail: string | null;
+  canEnviarAlHospital: boolean;
+  enviadoAlHospital: boolean;
 };
 
 @Injectable()
@@ -365,6 +369,7 @@ export class AspiranteService {
         row.idEvaluadorAsignado
           ? (evaluadorEmailById.get(row.idEvaluadorAsignado) ?? null)
           : null,
+        user,
       ),
     );
   }
@@ -411,7 +416,7 @@ export class AspiranteService {
         relations: ['evaluationFlowStep'],
         order: { createdAt: 'DESC' },
       });
-      return this.mapWithHospitalName(rows);
+      return this.mapWithHospitalName(rows, user);
     }
 
     const where: { active?: boolean } = {};
@@ -423,10 +428,13 @@ export class AspiranteService {
       relations: ['evaluationFlowStep'],
       order: { createdAt: 'DESC' },
     });
-    return this.mapWithHospitalName(rows);
+    return this.mapWithHospitalName(rows, user);
   }
 
-  private async mapWithHospitalName(rows: Aspirante[]): Promise<AspiranteWithHospitalName[]> {
+  private async mapWithHospitalName(
+    rows: Aspirante[],
+    user: JwtPayloadAdmin,
+  ): Promise<AspiranteWithHospitalName[]> {
     const tenantIds = [...new Set(rows.map((row) => row.tenantId))];
     const hospitals = await Promise.all(
       tenantIds.map((tenantId) => this.hospitalService.findByUuid(tenantId, true)),
@@ -447,6 +455,7 @@ export class AspiranteService {
         row.idEvaluadorAsignado
           ? (evaluadorEmailById.get(row.idEvaluadorAsignado) ?? null)
           : null,
+        user,
       ),
     );
   }
@@ -475,6 +484,7 @@ export class AspiranteService {
     row: Aspirante,
     hospitalNombre: string | null,
     evaluadorAsignadoEmail: string | null,
+    user: JwtPayloadAdmin,
   ): AspiranteWithHospitalName {
     const { passwordHash: _, primerAccesoToken: __, evaluationFlowStep, ...rest } = row;
     const evaluationFlowOrderId = evaluationFlowStep?.orderId ?? null;
@@ -486,6 +496,13 @@ export class AspiranteService {
       nombreCompleto: `${row.nombre} ${row.apellidos}`.trim(),
       canEvaluar: evaluationFlowOrderId === 5 || evaluationFlowOrderId === 6,
       evaluadorAsignadoEmail,
+      ...buildEnviarAlHospitalFlags(
+        row,
+        user.rol,
+        parseEnabledTenantIds(
+          this.configService.get<string>('GOOGLE_DRIVE_ENABLED_TENANT_IDS', ''),
+        ),
+      ),
     };
   }
 }

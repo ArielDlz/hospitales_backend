@@ -69,6 +69,19 @@ export class Aspirante extends TenantBaseEntity {
   @Column({ name: 'veredicto_informe', type: 'text', nullable: true })
   veredictoInforme: string | null;
 
+  @Column({ type: 'text', nullable: true, name: 'google_drive_file_id' })
+  googleDriveFileId: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'google_drive_file_url' })
+  googleDriveFileUrl: string | null;
+
+  @Column({
+    type: 'timestamptz',
+    nullable: true,
+    name: 'enviado_al_hospital_at',
+  })
+  enviadoAlHospitalAt: Date | null;
+
   @Column({ type: 'text', nullable: true, name: 'stripe_customer_id' })
   stripeCustomerId: string | null;
 }

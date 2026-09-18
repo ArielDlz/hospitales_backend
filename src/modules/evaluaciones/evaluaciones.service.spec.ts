@@ -7,10 +7,12 @@ import {
   ForbiddenException,
   GoneException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { EvaluacionesService } from './evaluaciones.service';
 import { InformePdfService } from './informe-pdf.service';
 import { S3StorageService } from '../storage/s3-storage.service';
+import { GoogleDriveService } from '../google-drive/google-drive.service';
 import { Aspirante } from '../aspirante/aspirante.entity';
 import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
 import { Prueba } from '../pruebas/entities/prueba.entity';
@@ -99,6 +101,13 @@ describe('EvaluacionesService', () => {
       url: nestedInformeUrl,
     }),
   };
+  const googleDriveService = {
+    getEnabledTenantIds: jest
+      .fn()
+      .mockReturnValue(['72ec5b8b-75e9-4956-b17d-85c946856a2d']),
+    isTenantEnabled: jest.fn().mockReturnValue(false),
+    uploadSignedInforme: jest.fn(),
+  };
   const dataSource = {
     transaction: jest.fn(async (cb) =>
       cb({
@@ -184,6 +193,10 @@ describe('EvaluacionesService', () => {
     aspiranteEvaluacionRepo.findOne.mockResolvedValue(null);
     usuarioRepo.findOne.mockResolvedValue({ email: 'evaluador-a@hospital.com' });
     usuarioRepo.find.mockResolvedValue([]);
+    googleDriveService.getEnabledTenantIds.mockReturnValue([
+      '72ec5b8b-75e9-4956-b17d-85c946856a2d',
+    ]);
+    googleDriveService.isTenantEnabled.mockReturnValue(false);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -209,6 +222,7 @@ describe('EvaluacionesService', () => {
         { provide: DataSource, useValue: dataSource },
         { provide: InformePdfService, useValue: informePdfService },
         { provide: S3StorageService, useValue: s3Storage },
+        { provide: GoogleDriveService, useValue: googleDriveService },
       ],
     }).compile();
 
@@ -385,6 +399,8 @@ describe('EvaluacionesService', () => {
       expect(result.readOnly).toBe(true);
       expect(aspiranteRepo.update).not.toHaveBeenCalled();
       expect(evaluationFlowService.advanceOneStepIfAt).not.toHaveBeenCalled();
+      expect(result.canEnviarAlHospital).toBe(false);
+      expect(result.enviadoAlHospital).toBe(false);
     });
   });
 
@@ -999,6 +1015,126 @@ describe('EvaluacionesService', () => {
       const result = await service.downloadInformeFirmado(aspiranteId, adminUser);
 
       expect(result.filename).toBe('legacy-name.pdf');
+    });
+  });
+
+  describe('enviarInformeAlHospital', () => {
+    const driveTenantId = '72ec5b8b-75e9-4956-b17d-85c946856a2d';
+    const signedAspirante = {
+      ...aspiranteStep6AssignedA,
+      tenantId: driveTenantId,
+      modalidad: 'Presencial',
+      especialidad: 'Cardiología',
+      documento: 'PEGJ880527HDFRRL09',
+      veredictoInforme: nestedInformeUrl,
+      googleDriveFileId: null as string | null,
+      googleDriveFileUrl: null as string | null,
+      enviadoAlHospitalAt: null as Date | null,
+      evaluationFlowStep: { orderId: 10, descripcion: 'Informe firmado' },
+    };
+    const originalFetch = global.fetch;
+
+    beforeEach(() => {
+      googleDriveService.isTenantEnabled.mockReturnValue(true);
+      googleDriveService.uploadSignedInforme.mockResolvedValue({
+        fileId: 'drive-file-1',
+        webViewLink: 'https://drive.google.com/file/d/drive-file-1/view',
+      });
+      hospitalRepo.findOne.mockResolvedValue({ nombre: 'Hospital General' });
+      aspiranteRepo.findOne.mockResolvedValue({ ...signedAspirante });
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => Buffer.from('%PDF-1.4 signed'),
+      }) as unknown as typeof fetch;
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('rechaza evaluadores', async () => {
+      await expect(
+        service.enviarInformeAlHospital(aspiranteId, evaluadorA),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('403 si el tenant no está habilitado', async () => {
+      googleDriveService.isTenantEnabled.mockReturnValue(false);
+
+      await expect(
+        service.enviarInformeAlHospital(aspiranteId, adminUser),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('404 si no hay informe firmado', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...signedAspirante,
+        veredictoInforme: null,
+      });
+
+      await expect(
+        service.enviarInformeAlHospital(aspiranteId, adminUser),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('409 si ya fue enviado', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...signedAspirante,
+        googleDriveFileId: 'already',
+        enviadoAlHospitalAt: new Date(),
+      });
+
+      await expect(
+        service.enviarInformeAlHospital(aspiranteId, adminUser),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('400 si faltan modalidad o especialidad', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...signedAspirante,
+        modalidad: '  ',
+      });
+
+      await expect(
+        service.enviarInformeAlHospital(aspiranteId, adminUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('503 si S3 no responde', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+      }) as unknown as typeof fetch;
+
+      await expect(
+        service.enviarInformeAlHospital(aspiranteId, adminUser),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('copia el PDF de S3 a Drive y no cambia veredicto_informe', async () => {
+      const result = await service.enviarInformeAlHospital(
+        aspiranteId,
+        adminUser,
+      );
+
+      expect(global.fetch).toHaveBeenCalledWith(nestedInformeUrl);
+      expect(googleDriveService.uploadSignedInforme).toHaveBeenCalledWith({
+        hospitalNombre: 'hospital-general',
+        modalidad: 'presencial',
+        especialidad: 'cardiologia',
+        filename: `PEGJ880527HDFRRL09_Cardiología_${new Date().getFullYear()}.pdf`,
+        buffer: expect.any(Buffer),
+      });
+      expect(aspiranteRepo.update).toHaveBeenCalledWith(
+        { id: aspiranteId },
+        {
+          googleDriveFileId: 'drive-file-1',
+          googleDriveFileUrl: 'https://drive.google.com/file/d/drive-file-1/view',
+          enviadoAlHospitalAt: expect.any(Date),
+        },
+      );
+      expect(result.googleDriveFileId).toBe('drive-file-1');
+      expect(result.message).toBe('Informe enviado al hospital correctamente');
+      expect(s3Storage.uploadBuffer).not.toHaveBeenCalled();
     });
   });
 

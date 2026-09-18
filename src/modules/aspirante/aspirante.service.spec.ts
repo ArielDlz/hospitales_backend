@@ -35,6 +35,12 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     sendRecordatorioPruebasEmail: jest.fn(),
     sendRecordatorioPrimerAccesoEmail: jest.fn(),
   };
+  const usuarioRepo = {
+    find: jest.fn().mockResolvedValue([]),
+  };
+  const configService = {
+    get: jest.fn(),
+  };
 
   const adminUser = {
     type: 'admin',
@@ -67,13 +73,13 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
         },
         {
           provide: getRepositoryToken(UsuarioAdministrativo),
-          useValue: {},
+          useValue: usuarioRepo,
         },
         { provide: HospitalService, useValue: hospitalService },
         { provide: MailService, useValue: mailService },
         {
           provide: ConfigService,
-          useValue: { get: jest.fn() },
+          useValue: configService,
         },
         { provide: DataSource, useValue: {} },
         { provide: EvaluationFlowService, useValue: evaluationFlowService },
@@ -312,5 +318,41 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     ).rejects.toThrow('El aspirante no tiene token de primer acceso');
     expect(aspiranteRepo.save).not.toHaveBeenCalled();
     expect(mailService.sendRecordatorioPrimerAccesoEmail).not.toHaveBeenCalled();
+  });
+
+  it('findAll expone canEnviarAlHospital solo para admin con informe firmado en tenant habilitado', async () => {
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      nombre: 'Hospital General',
+    });
+    (configService.get as jest.Mock).mockImplementation(
+      (key: string, fallback = '') =>
+        key === 'GOOGLE_DRIVE_ENABLED_TENANT_IDS' ? tenantId : fallback,
+    );
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        nombre: 'Juan',
+        apellidos: 'García',
+        passwordHash: 'x',
+        primerAccesoToken: 't',
+        veredictoInforme: 'https://s3.example/informe.pdf',
+        modalidad: 'presencial',
+        especialidad: 'Cardiología',
+        documento: 'PEGJ880527HDFRRL09',
+        googleDriveFileId: null,
+        googleDriveFileUrl: null,
+        enviadoAlHospitalAt: null,
+        idEvaluadorAsignado: null,
+        evaluationFlowStep: { orderId: 10, descripcion: 'Informe firmado' },
+      },
+    ]);
+
+    const [item] = await service.findAll(tenantId, undefined, false, adminUser);
+
+    expect(item.canEnviarAlHospital).toBe(true);
+    expect(item.enviadoAlHospital).toBe(false);
+    expect(item.nombreCompleto).toBe('Juan García');
   });
 });

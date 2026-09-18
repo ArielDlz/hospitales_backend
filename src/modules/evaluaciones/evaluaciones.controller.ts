@@ -31,6 +31,7 @@ import {
 } from './dto/aspirante-evaluacion-response.dto';
 import { FirmarInformeResponseDto } from './dto/firmar-informe-response.dto';
 import { AsignarEvaluacionResponseDto } from './dto/asignar-evaluacion-response.dto';
+import { EnviarInformeAlHospitalResponseDto } from './dto/enviar-informe-al-hospital-response.dto';
 import { buildContentDispositionAttachment } from './informe-firmado-filename.util';
 
 @ApiTags('evaluaciones')
@@ -150,6 +151,22 @@ export class EvaluacionesController {
     @CurrentUser() user: JwtPayloadAdmin,
   ): Promise<FirmarInformeResponseDto> {
     return this.evaluacionesService.firmarInforme(aspiranteId, user);
+  }
+
+  @Post('aspirantes/:aspiranteId/informe/enviar-al-hospital')
+  @ApiOperation({
+    summary:
+      'Copiar el PDF firmado de S3 a Google Drive (solo administrador, informe firmado, tenant habilitado)',
+  })
+  @ApiCreatedResponse({ type: EnviarInformeAlHospitalResponseDto })
+  @ApiConflictResponse({ description: 'El informe ya fue enviado al hospital' })
+  @ApiResponse({ status: 403, description: 'No administrador o hospital no habilitado' })
+  @ApiResponse({ status: 404, description: 'Aspirante o informe firmado no encontrado' })
+  async enviarInformeAlHospital(
+    @Param('aspiranteId', ParseUUIDPipe) aspiranteId: string,
+    @CurrentUser() user: JwtPayloadAdmin,
+  ): Promise<EnviarInformeAlHospitalResponseDto> {
+    return this.evaluacionesService.enviarInformeAlHospital(aspiranteId, user);
   }
 
   @Post('aspirantes/:aspiranteId/informe')
