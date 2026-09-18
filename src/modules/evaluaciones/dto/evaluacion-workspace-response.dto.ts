@@ -151,4 +151,35 @@ export class EvaluacionWorkspaceResponseDto {
 
   @ApiProperty({ type: [EvaluacionIntentoWorkspaceDto] })
   intentos: EvaluacionIntentoWorkspaceDto[];
+
+  @ApiProperty({
+    example: true,
+    description:
+      'true si el usuario es administrador, el tenant está habilitado para Drive, hay informe firmado, modalidad/especialidad/documento, y aún no se envió',
+  })
+  canEnviarAlHospital: boolean;
+
+  @ApiProperty({
+    example: false,
+    description: 'true si el informe firmado ya se copió a Google Drive',
+  })
+  enviadoAlHospital: boolean;
+
+  @ApiPropertyOptional({
+    example: '1abc2def3ghi',
+    nullable: true,
+  })
+  googleDriveFileId: string | null;
+
+  @ApiPropertyOptional({
+    example: 'https://drive.google.com/file/d/1abc2def3ghi/view',
+    nullable: true,
+  })
+  googleDriveFileUrl: string | null;
+
+  @ApiPropertyOptional({
+    example: '2026-09-18T14:23:00.000Z',
+    nullable: true,
+  })
+  enviadoAlHospitalAt: Date | null;
 }

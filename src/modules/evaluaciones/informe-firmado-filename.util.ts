@@ -1,6 +1,6 @@
 import { resolveResultadoPerfilKey } from './informe-pdf.utils';
 
-function sanitizeFilenamePart(value: string): string {
+export function sanitizeFilenamePart(value: string): string {
   return value
     .replace(/[/\\?%*:|"<>]/g, '')
     .replace(/[\x00-\x1f\x7f]/g, '')
@@ -97,4 +97,20 @@ export function buildContentDispositionAttachment(filename: string): string {
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
   );
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+}
+
+/**
+ * Drive filename for Enviar al hospital:
+ * `{CURP}_{especialidad}_{YYYY}.pdf`
+ * especialidad is the raw DB value with illegal filename characters stripped.
+ * YYYY is the calendar year at send time.
+ */
+export function buildInformeDriveFilename(
+  documento: string,
+  especialidad: string,
+  year: number,
+): string {
+  const curp = sanitizeFilenamePart(documento);
+  const especialidadPart = sanitizeFilenamePart(especialidad);
+  return `${curp}_${especialidadPart}_${year}.pdf`;
 }

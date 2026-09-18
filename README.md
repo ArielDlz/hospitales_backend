@@ -90,6 +90,8 @@ psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/019_solicitu
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/020_hospitales_acceso_ventana.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/021_aspirantes_especialidad_nacionalidad_rfc.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/023_usuarios_administrativos_supervisor.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/024_aspirantes_google_drive.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/025_google_drive_oauth.sql
 ```
 
 ### Ventana de acceso por hospital (tenant)
@@ -265,6 +267,8 @@ Campos útiles en cada ítem del listado:
 | GET | `/evaluaciones/aspirantes/:aspiranteId` | Workspace: intentos, respuestas e informe. **Asigna evaluador y avanza paso 5→6** al abrir (evaluador) |
 | PUT | `/evaluaciones/intentos/:idPruebaAspirante` | **Deprecado (410)** — comentarios por prueba ya no soportados |
 | POST | `/evaluaciones/aspirantes/:aspiranteId/informe` | Informe final + veredicto (solo evaluador asignado, paso 6) |
+| POST | `/evaluaciones/aspirantes/:aspiranteId/informe/firmar` | Firmar informe, subir PDF a S3 |
+| POST | `/evaluaciones/aspirantes/:aspiranteId/informe/enviar-al-hospital` | Copiar PDF firmado de S3 a Google Drive (**solo administrador**, tenant habilitado) |
 | POST | `/evaluaciones/aspirantes/:aspiranteId/confirmar` | Confirmar evaluación → paso 7 y `pruebas_aspirantes.status=evaluada` |
 
 **Bloqueo por evaluador:** al abrir el workspace, el primer evaluador queda asignado en `aspirantes.id_evaluador_asignado`. Otros evaluadores reciben **403**. El administrador puede **ver** el workspace (`readOnly: true`) pero no editar. El **supervisor** del evaluador asignado también puede abrir el workspace en `readOnly: true` y **firmar** el informe (bypass de tenant). La asignación se conserva como historial tras confirmar.
@@ -280,6 +284,16 @@ Flujo evaluador:
 5. Enviar informe con `POST .../informe`.
 6. Confirmar con `POST .../confirmar` (habilitar en UI si `canConfirmarEvaluacion === true` en el workspace).
 7. Firmar con `POST .../firmar` (evaluador asignado con firma, su supervisor, o admin con firma).
+8. Enviar al hospital con `POST .../informe/enviar-al-hospital` (solo administrador; habilitar si `canEnviarAlHospital === true`). Requiere Google Drive conectado (`GET /google-drive/status`).
+
+**Google Drive** (JWT admin; conectar/desconectar solo superusuario):
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/google-drive/status` | `{ connected, googleEmail, canConnect }` |
+| GET | `/google-drive/oauth/url` | URL de consentimiento Google (superusuario) |
+| POST | `/google-drive/oauth/callback` | Body `{ code }` — guarda refresh token (superusuario) |
+| DELETE | `/google-drive/oauth` | Desconectar cuenta (superusuario) |
 
 **Pruebas** (JWT admin/evaluador para lectura; crear/editar/borrado lógico solo **administrador** — ver Swagger):
 

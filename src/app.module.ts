@@ -17,6 +17,7 @@ import { PruebasModule } from './modules/pruebas/pruebas.module';
 import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { SolicitudesAccesoModule } from './modules/solicitudes-acceso/solicitudes-acceso.module';
+import { GoogleDriveModule } from './modules/google-drive/google-drive.module';
 
 @Module({
   imports: [
@@ -51,6 +52,12 @@ import { SolicitudesAccesoModule } from './modules/solicitudes-acceso/solicitude
           .valid('any', 'challenge')
           .default('challenge'),
         STRIPE_BILLING_COUNTRY: Joi.string().length(2).uppercase().default('MX'),
+        GOOGLE_OAUTH_CLIENT_ID: Joi.string().allow('').default(''),
+        GOOGLE_OAUTH_CLIENT_SECRET: Joi.string().allow('').default(''),
+        GOOGLE_OAUTH_REDIRECT_URI: Joi.string().allow('').default(''),
+        GOOGLE_DRIVE_ENABLED_TENANT_IDS: Joi.string()
+          .allow('')
+          .default(''),
       }),
     }),
     TypeOrmModule.forRootAsync({
@@ -76,6 +83,7 @@ import { SolicitudesAccesoModule } from './modules/solicitudes-acceso/solicitude
     EvaluacionesModule,
     PaymentsModule,
     SolicitudesAccesoModule,
+    GoogleDriveModule,
   ],
   controllers: [AppController],
   providers: [

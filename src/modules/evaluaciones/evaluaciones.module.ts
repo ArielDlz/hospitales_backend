@@ -15,6 +15,7 @@ import { AuthModule } from '../auth/auth.module';
 import { AspiranteModule } from '../aspirante/aspirante.module';
 import { PruebasModule } from '../pruebas/pruebas.module';
 import { StorageModule } from '../storage/storage.module';
+import { GoogleDriveModule } from '../google-drive/google-drive.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { StorageModule } from '../storage/storage.module';
     AspiranteModule,
     PruebasModule,
     StorageModule,
+    GoogleDriveModule,
   ],
   controllers: [EvaluacionesController],
   providers: [EvaluacionesService, InformePdfService],

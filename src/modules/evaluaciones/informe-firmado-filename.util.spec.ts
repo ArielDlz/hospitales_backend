@@ -1,4 +1,5 @@
 import {
+  buildInformeDriveFilename,
   buildInformeFirmadoFilename,
   buildInformeFirmadoS3Key,
   resolveVeredictoInicial,
@@ -19,6 +20,24 @@ describe('informe-firmado-filename.util', () => {
       expect(resolveVeredictoInicial('no_aceptado', 'No Aceptado')).toBe('N');
       expect(resolveVeredictoInicial('no_apto', 'No apto')).toBe('N');
       expect(resolveVeredictoInicial('rechazado', 'Rechazado')).toBe('N');
+    });
+  });
+
+  describe('buildInformeDriveFilename', () => {
+    it('arma CURP_especialidad_YYYY.pdf conservando acentos y espacios', () => {
+      expect(
+        buildInformeDriveFilename(
+          'PEGJ880527HDFRRL09',
+          'Medicina Interna',
+          2026,
+        ),
+      ).toBe('PEGJ880527HDFRRL09_Medicina Interna_2026.pdf');
+    });
+
+    it('elimina caracteres ilegales de especialidad', () => {
+      expect(
+        buildInformeDriveFilename('PEGJ880527HDFRRL09', 'Cardio/Logía', 2026),
+      ).toBe('PEGJ880527HDFRRL09_CardioLogía_2026.pdf');
     });
   });
 

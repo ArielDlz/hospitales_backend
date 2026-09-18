@@ -34,10 +34,15 @@ import { FirmarInformeResponseDto } from './dto/firmar-informe-response.dto';
 import { AsignarEvaluacionResponseDto } from './dto/asignar-evaluacion-response.dto';
 import { Hospital } from '../hospital/hospital.entity';
 import { S3StorageService } from '../storage/s3-storage.service';
+import { GoogleDriveService } from '../google-drive/google-drive.service';
+import { buildEnviarAlHospitalFlags } from '../google-drive/enviar-al-hospital.flags';
+import { EnviarInformeAlHospitalResponseDto } from './dto/enviar-informe-al-hospital-response.dto';
 import {
+  buildInformeDriveFilename,
   buildInformeFirmadoFilename,
   buildInformeFirmadoS3Key,
   resolveInformeFirmadoFilename,
+  slugifyPathSegment,
 } from './informe-firmado-filename.util';
 import {
   MSG_FIRMANTE_DELEGADO_NO_DISPONIBLE,
@@ -119,6 +124,7 @@ export class EvaluacionesService {
     private readonly dataSource: DataSource,
     private readonly informePdfService: InformePdfService,
     private readonly s3Storage: S3StorageService,
+    private readonly googleDriveService: GoogleDriveService,
   ) {}
 
   async findVeredictos(): Promise<VeredictoResponseDto[]> {
@@ -268,6 +274,11 @@ export class EvaluacionesService {
       readOnly,
       evaluadorAsignadoEmail,
       intentos: intentosWorkspace,
+      ...buildEnviarAlHospitalFlags(
+        aspirante,
+        user.rol,
+        this.googleDriveService.getEnabledTenantIds(),
+      ),
     };
   }
 
@@ -485,14 +496,9 @@ export class EvaluacionesService {
       );
     }
 
-    const response = await fetch(aspirante.veredictoInforme);
-    if (!response.ok) {
-      throw new ServiceUnavailableException(
-        'No se pudo descargar el informe firmado desde el almacenamiento',
-      );
-    }
-
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const buffer = await this.fetchSignedInformeBuffer(
+      aspirante.veredictoInforme,
+    );
 
     let veredictoCodigo: string | null = null;
     let veredictoEtiqueta: string | null = null;
@@ -517,6 +523,106 @@ export class EvaluacionesService {
     });
 
     return { buffer, filename };
+  }
+
+  async enviarInformeAlHospital(
+    aspiranteId: string,
+    user: JwtPayloadAdmin,
+  ): Promise<EnviarInformeAlHospitalResponseDto> {
+    if (user.rol !== RolUsuarioAdmin.Administrador) {
+      throw new ForbiddenException(
+        'Solo los administradores pueden enviar el informe al hospital',
+      );
+    }
+
+    const aspirante = await this.loadAspiranteWithFlow(aspiranteId);
+
+    if (!this.googleDriveService.isTenantEnabled(aspirante.tenantId)) {
+      throw new ForbiddenException(
+        'Google Drive no está habilitado para este hospital',
+      );
+    }
+
+    if (!aspirante.veredictoInforme?.trim()) {
+      throw new NotFoundException(
+        'No existe un informe firmado para este aspirante',
+      );
+    }
+
+    if (
+      aspirante.googleDriveFileId?.trim() ||
+      aspirante.enviadoAlHospitalAt != null
+    ) {
+      throw new ConflictException(
+        'El informe ya fue enviado al hospital',
+      );
+    }
+
+    const modalidad = aspirante.modalidad?.trim() ?? '';
+    const especialidad = aspirante.especialidad?.trim() ?? '';
+    if (!modalidad || !especialidad) {
+      throw new BadRequestException(
+        'El aspirante debe tener modalidad y especialidad para enviar al hospital',
+      );
+    }
+
+    const documento = aspirante.documento?.trim() ?? '';
+    if (!documento) {
+      throw new BadRequestException(
+        'El aspirante debe tener documento (CURP) para enviar al hospital',
+      );
+    }
+
+    const hospital = await this.hospitalRepository.findOne({
+      where: { uuid: aspirante.tenantId },
+      select: ['nombre'],
+    });
+    if (!hospital) {
+      throw new NotFoundException('Hospital no encontrado');
+    }
+
+    const hospitalFolder = slugifyPathSegment(hospital.nombre ?? '');
+    const modalidadFolder = slugifyPathSegment(modalidad);
+    const especialidadFolder = slugifyPathSegment(especialidad);
+    if (!hospitalFolder || !modalidadFolder || !especialidadFolder) {
+      throw new BadRequestException(
+        'No se pueden generar las carpetas de Google Drive con los datos del hospital o del aspirante',
+      );
+    }
+
+    const buffer = await this.fetchSignedInformeBuffer(
+      aspirante.veredictoInforme,
+    );
+    const filename = buildInformeDriveFilename(
+      documento,
+      especialidad,
+      new Date().getFullYear(),
+    );
+
+    const uploaded = await this.googleDriveService.uploadSignedInforme({
+      hospitalNombre: hospitalFolder,
+      modalidad: modalidadFolder,
+      especialidad: especialidadFolder,
+      filename,
+      buffer,
+    });
+
+    const enviadoAlHospitalAt = new Date();
+    await this.aspiranteRepository.update(
+      { id: aspiranteId },
+      {
+        googleDriveFileId: uploaded.fileId,
+        googleDriveFileUrl: uploaded.webViewLink,
+        enviadoAlHospitalAt,
+      },
+    );
+
+    return {
+      googleDriveFileId: uploaded.fileId,
+      googleDriveFileUrl: uploaded.webViewLink,
+      enviadoAlHospitalAt,
+      message: 'Informe enviado al hospital correctamente',
+    };
   }
 
   async confirmarEvaluacion(
@@ -569,6 +675,16 @@ export class EvaluacionesService {
       message: 'Evaluación confirmada correctamente',
       evaluationFlowOrderId: advance.newOrderId ?? 7,
     };
+  }
+
+  private async fetchSignedInformeBuffer(url: string): Promise<Buffer> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new ServiceUnavailableException(
+        'No se pudo descargar el informe firmado desde el almacenamiento',
+      );
+    }
+    return Buffer.from(await response.arrayBuffer());
   }
 
   private async loadAspiranteWithFlow(aspiranteId: string): Promise<Aspirante> {
