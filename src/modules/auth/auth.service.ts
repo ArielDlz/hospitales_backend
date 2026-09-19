@@ -28,6 +28,7 @@ import {
   JwtPayloadAspirante,
 } from '../../common/interfaces/jwt-payload.interface';
 import { getRequestId } from '../../common/request-context';
+import { resolvePaymentProvider } from '../payments/payment-link.util';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { AspiranteLoginDto } from './dto/aspirante-login.dto';
 import { ActivarCuentaDto } from './dto/activar-cuenta.dto';
@@ -204,14 +205,19 @@ export class AuthService {
   }
 
   /**
-   * Firma un JWT de aspirante con order_id y descripción del paso actual.
+   * Firma un JWT de aspirante con order_id, descripción del paso y canal de pago.
    * TTL: always 1d (soft-close does not shorten sessions).
    * Reutilizar tras login, activar cuenta, avanzar/retroceder paso, etc.
    */
   issueAspiranteAccessToken(params: {
     aspirante: Pick<
       Aspirante,
-      'id' | 'tenantId' | 'registroHospital' | 'nombre' | 'apellidos'
+      | 'id'
+      | 'tenantId'
+      | 'registroHospital'
+      | 'nombre'
+      | 'apellidos'
+      | 'paymentLink'
     >;
     hospitalSlug: string;
     accesoCierraAt: Date | null;
@@ -227,6 +233,7 @@ export class AuthService {
       nombre: fullName,
       evaluationFlowOrderId: params.flowStep.orderId,
       evaluationFlowDescripcion: params.flowStep.descripcion,
+      paymentProvider: resolvePaymentProvider(params.aspirante.paymentLink),
     };
     const expiresIn = resolveAspiranteJwtExpiresIn();
     const accessToken = this.jwtService.sign(payload, { expiresIn });

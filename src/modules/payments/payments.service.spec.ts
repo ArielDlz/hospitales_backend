@@ -79,6 +79,7 @@ describe('PaymentsService', () => {
     nombre: 'Juan Pérez',
     evaluationFlowOrderId: 2,
     evaluationFlowDescripcion: 'Registrado',
+    paymentProvider: 'stripe',
   };
 
   const paymentRepo = {

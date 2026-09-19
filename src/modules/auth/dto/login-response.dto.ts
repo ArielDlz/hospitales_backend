@@ -3,7 +3,8 @@ import { ApiProperty } from '@nestjs/swagger';
 export class LoginResponseDto {
   @ApiProperty({
     example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-    description: 'Token JWT para autenticación',
+    description:
+      'Token JWT. En aspirantes incluye evaluationFlowOrderId y paymentProvider (stripe | banorte).',
   })
   accessToken: string;
 

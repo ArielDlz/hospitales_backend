@@ -3,3 +3,10 @@ export function hasBanortePaymentLink(
 ): boolean {
   return Boolean(link?.trim());
 }
+
+export function resolvePaymentProvider(
+  link: string | null | undefined,
+): 'stripe' | 'banorte' {
+  return hasBanortePaymentLink(link) ? 'banorte' : 'stripe';
+}
+
