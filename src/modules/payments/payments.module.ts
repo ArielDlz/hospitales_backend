@@ -12,7 +12,7 @@ import { PaymentsWebhookController } from './payments-webhook.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Payment, Aspirante, Hospital]),
-    AuthModule,
+    forwardRef(() => AuthModule),
     forwardRef(() => AspiranteModule),
   ],
   controllers: [PaymentsController, PaymentsWebhookController],
