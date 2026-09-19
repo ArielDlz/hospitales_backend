@@ -27,7 +27,7 @@ export class PaymentsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Iniciar pago. Stripe: clientSecret y Payment Element. Banorte: paymentLink si el aspirante tiene liga. Solo si evaluationFlowOrderId = 2.',
+      'Iniciar pago. Stripe: clientSecret y Payment Element (requiere ventana de acceso abierta). Banorte: paymentLink si el aspirante tiene liga; permitido antes de acceso_abre_at. Solo si evaluationFlowOrderId = 2.',
   })
   @ApiOkResponse({ type: CreatePaymentIntentResponseDto })
   @ApiConflictResponse({ description: 'El aspirante ya pagó' })

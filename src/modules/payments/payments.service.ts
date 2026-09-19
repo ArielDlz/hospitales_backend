@@ -94,7 +94,7 @@ export class PaymentsService {
     }
 
     if (hasBanortePaymentLink(aspirante.paymentLink)) {
-      await this.rejectIfTenantAccessBlocked(user.tenantId);
+      await this.rejectIfTenantClosedForBanorte(user.tenantId);
       return this.toBanorteIntentResponse(aspirante);
     }
 
@@ -473,9 +473,10 @@ export class PaymentsService {
   }
 
   /**
-   * Before acceso_abre_at: 403 without canceling Stripe intents.
+   * Stripe only. Before acceso_abre_at: 403 without canceling intents.
    * After acceso_cierra_at: cancel unpaid Stripe intent (if any), mark local row
    * canceled, then 403. Paid intents / succeeded confirms are not blocked here.
+   * Banorte early pay is allowed before open (see rejectIfTenantClosedForBanorte).
    */
   private async rejectNewPaymentsIfTenantClosed(
     tenantId: string,
@@ -662,16 +663,17 @@ export class PaymentsService {
     };
   }
 
-  private async rejectIfTenantAccessBlocked(tenantId: string): Promise<void> {
+  /**
+   * Banorte may return the payment link before acceso_abre_at (early pay).
+   * That does not mark paid nor advance the flow. After close, still 403.
+   */
+  private async rejectIfTenantClosedForBanorte(tenantId: string): Promise<void> {
     const hospital = await this.hospitalRepository.findOne({
       where: { uuid: tenantId, active: true },
-      select: ['accesoAbreAt', 'accesoCierraAt'],
+      select: ['accesoCierraAt'],
     });
     if (!hospital) {
       return;
-    }
-    if (isTenantAccessNotOpened(hospital)) {
-      throw new ForbiddenException(MSG_ACCESO_AUN_NO_ABIERTO);
     }
     if (isTenantAccessClosed(hospital)) {
       throw new ForbiddenException(MSG_ACCESO_FINALIZADO);

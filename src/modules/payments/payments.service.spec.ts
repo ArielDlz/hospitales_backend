@@ -569,6 +569,40 @@ describe('PaymentsService', () => {
         billingDefaults: null,
       });
     });
+
+    it('Banorte permite intent antes de abrir el acceso', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteAtPaymentStep,
+        paymentLink: 'https://banorte.example/pay',
+      });
+      paymentRepo.findOne.mockResolvedValue(null);
+      hospitalRepo.findOne.mockResolvedValue({
+        accesoAbreAt: new Date(Date.now() + 60_000),
+        accesoCierraAt: null,
+      });
+
+      const result = await service.createPaymentIntent(user);
+
+      expect(result.provider).toBe('banorte');
+      expect(result.paymentLink).toBe('https://banorte.example/pay');
+      expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+    });
+
+    it('Banorte sigue bloqueado tras cierre del acceso', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteAtPaymentStep,
+        paymentLink: 'https://banorte.example/pay',
+      });
+      paymentRepo.findOne.mockResolvedValue(null);
+      hospitalRepo.findOne.mockResolvedValue({
+        accesoAbreAt: new Date(Date.now() - 60_000),
+        accesoCierraAt: new Date(Date.now() - 1_000),
+      });
+
+      await expect(service.createPaymentIntent(user)).rejects.toThrow(
+        MSG_ACCESO_FINALIZADO,
+      );
+    });
   });
 
   describe('handleWebhook', () => {
