@@ -7,7 +7,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull, Not } from 'typeorm';
 import { AspiranteService } from './aspirante.service';
 import { Aspirante } from './aspirante.entity';
 import { EvaluationFlowStep } from './evaluation-flow-step.entity';
@@ -354,5 +354,81 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     expect(item.canEnviarAlHospital).toBe(true);
     expect(item.enviadoAlHospital).toBe(false);
     expect(item.nombreCompleto).toBe('Juan García');
+  });
+
+  it('findClaimedPayments lista reclamaciones pendientes ordenadas por claimed_at', async () => {
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      nombre: 'Hospital General',
+    });
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        nombre: 'Ana',
+        apellidos: 'López',
+        passwordHash: 'x',
+        primerAccesoToken: null,
+        claimedAt: new Date('2026-09-17T10:00:00.000Z'),
+        paymentLink: 'https://ligasdepago.banorte.com/abc',
+        paymentReference: 'REF-1',
+        idEvaluadorAsignado: null,
+        veredictoInforme: null,
+        modalidad: null,
+        especialidad: null,
+        documento: null,
+        googleDriveFileId: null,
+        googleDriveFileUrl: null,
+        enviadoAlHospitalAt: null,
+        evaluationFlowStep: { orderId: 2, descripcion: 'Registrado' },
+      },
+    ]);
+
+    const [item] = await service.findClaimedPayments(adminUser);
+
+    expect(aspiranteRepo.find).toHaveBeenCalledWith({
+      where: {
+        claimedAt: Not(IsNull()),
+        active: true,
+        evaluationFlowStep: { orderId: 2 },
+      },
+      relations: ['evaluationFlowStep'],
+      order: { claimedAt: 'ASC' },
+    });
+    expect(item.claimedAt).toEqual(new Date('2026-09-17T10:00:00.000Z'));
+    expect(item.evaluationFlowOrderId).toBe(2);
+    expect(item.paymentReference).toBe('REF-1');
+    expect(item.nombreCompleto).toBe('Ana López');
+  });
+
+  it('findClaimedPayments filtra por tenantId cuando se envía', async () => {
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      nombre: 'Hospital General',
+    });
+    aspiranteRepo.find.mockResolvedValue([]);
+
+    await service.findClaimedPayments(adminUser, tenantId);
+
+    expect(hospitalService.findByUuid).toHaveBeenCalledWith(tenantId);
+    expect(aspiranteRepo.find).toHaveBeenCalledWith({
+      where: {
+        claimedAt: Not(IsNull()),
+        active: true,
+        evaluationFlowStep: { orderId: 2 },
+        tenantId,
+      },
+      relations: ['evaluationFlowStep'],
+      order: { claimedAt: 'ASC' },
+    });
+  });
+
+  it('findClaimedPayments 400 si el tenant no existe', async () => {
+    hospitalService.findByUuid.mockResolvedValue(null);
+
+    await expect(
+      service.findClaimedPayments(adminUser, tenantId),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(aspiranteRepo.find).not.toHaveBeenCalled();
   });
 });

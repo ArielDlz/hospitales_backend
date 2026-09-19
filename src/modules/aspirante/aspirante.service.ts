@@ -8,7 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, In, IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Aspirante } from './aspirante.entity';
@@ -317,6 +317,33 @@ export class AspiranteService {
       evaluationFlowDescripcion: evaluationFlowStep?.descripcion ?? null,
       emailEnviado,
     };
+  }
+
+  async findClaimedPayments(
+    user: JwtPayloadAdmin,
+    tenantId?: string,
+  ): Promise<AspiranteWithHospitalName[]> {
+    const where: FindOptionsWhere<Aspirante> = {
+      claimedAt: Not(IsNull()),
+      active: true,
+      evaluationFlowStep: { orderId: 2 },
+    };
+
+    if (tenantId?.trim()) {
+      const hospital = await this.hospitalService.findByUuid(tenantId.trim());
+      if (!hospital) {
+        throw new BadRequestException('Hospital no encontrado');
+      }
+      where.tenantId = hospital.uuid;
+    }
+
+    const rows = await this.aspiranteRepository.find({
+      where,
+      relations: ['evaluationFlowStep'],
+      order: { claimedAt: 'ASC' },
+    });
+
+    return this.mapWithHospitalName(rows, user);
   }
 
   async findAll(

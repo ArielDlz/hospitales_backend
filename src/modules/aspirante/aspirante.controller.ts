@@ -106,6 +106,32 @@ export class AspiranteController {
     );
   }
 
+  @Get('pagos-reclamados')
+  @UseGuards(SuperuserGuard)
+  @ApiOperation({
+    summary:
+      'Listar aspirantes que pulsaron Ya pagué y siguen en paso 2 (Registrado). Orden: claimed_at más antiguo primero, para priorizar confirmar-pago. Solo superusuario.',
+  })
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    description: 'UUID del hospital. Si se omite, lista reclamaciones de todos los hospitales.',
+  })
+  @ApiOkResponse({
+    description:
+      'Aspirantes con claimed_at y evaluationFlowOrderId=2. Incluye paymentLink, paymentReference y claimedAt.',
+    type: AspiranteResponseDto,
+    isArray: true,
+  })
+  @ApiResponse({ status: 400, description: 'Hospital no encontrado' })
+  @ApiResponse({ status: 403, description: 'Requiere superusuario' })
+  async findClaimedPayments(
+    @Query('tenantId') tenantId: string | undefined,
+    @CurrentUser() user: JwtPayloadAdmin,
+  ) {
+    return this.aspiranteService.findClaimedPayments(user, tenantId);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Crear aspirante (admin/evaluador). Envía email con link de activación.' })
   @ApiCreatedResponse({
