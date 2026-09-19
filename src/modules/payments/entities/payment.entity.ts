@@ -16,6 +16,11 @@ export enum PaymentStatus {
   Canceled = 'canceled',
 }
 
+export enum PaymentProvider {
+  Stripe = 'stripe',
+  Banorte = 'banorte',
+}
+
 @Entity('payments')
 export class Payment {
   @PrimaryGeneratedColumn('uuid')
@@ -36,6 +41,9 @@ export class Payment {
 
   @Column({ type: 'text', nullable: true, name: 'stripe_payment_intent_id' })
   stripePaymentIntentId: string | null;
+
+  @Column({ type: 'text', default: PaymentProvider.Stripe })
+  provider: PaymentProvider;
 
   @Column({ type: 'integer', name: 'amount_cents' })
   amountCents: number;

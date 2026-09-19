@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AspiranteModule } from '../aspirante/aspirante.module';
@@ -13,7 +13,7 @@ import { PaymentsWebhookController } from './payments-webhook.controller';
   imports: [
     TypeOrmModule.forFeature([Payment, Aspirante, Hospital]),
     AuthModule,
-    AspiranteModule,
+    forwardRef(() => AspiranteModule),
   ],
   controllers: [PaymentsController, PaymentsWebhookController],
   providers: [PaymentsService],

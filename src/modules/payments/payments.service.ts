@@ -2,9 +2,12 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -21,11 +24,18 @@ import {
   MSG_ACCESO_FINALIZADO,
 } from '../hospital/tenant-access-window';
 import { JwtPayloadAspirante } from '../../common/interfaces/jwt-payload.interface';
-import { Payment, PaymentStatus } from './entities/payment.entity';
+import {
+  Payment,
+  PaymentProvider,
+  PaymentStatus,
+} from './entities/payment.entity';
+import { ClaimPaymentResponseDto } from './dto/claim-payment-response.dto';
+import { ConfirmBanortePaymentResponseDto } from './dto/confirm-banorte-payment-response.dto';
 import { ConfirmPaymentResponseDto } from './dto/confirm-payment-response.dto';
 import { CreatePaymentIntentResponseDto } from './dto/create-payment-intent-response.dto';
 import type { StripeThreeDSecureRequest } from './dto/create-payment-intent-response.dto';
 import { PaymentBillingDefaultsDto } from './dto/payment-billing-defaults.dto';
+import { hasBanortePaymentLink } from './payment-link.util';
 
 export const PAYMENT_BILLING_COUNTRY = 'MX';
 
@@ -54,6 +64,7 @@ export class PaymentsService {
   constructor(
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
+    @Inject(forwardRef(() => EvaluationFlowService))
     private readonly evaluationFlowService: EvaluationFlowService,
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
@@ -82,6 +93,11 @@ export class PaymentsService {
       throw new ConflictException('Este aspirante ya completó el pago');
     }
 
+    if (hasBanortePaymentLink(aspirante.paymentLink)) {
+      await this.rejectIfTenantAccessBlocked(user.tenantId);
+      return this.toBanorteIntentResponse(aspirante);
+    }
+
     await this.rejectNewPaymentsIfTenantClosed(user.tenantId, existing);
 
     if (existing?.stripePaymentIntentId) {
@@ -103,6 +119,16 @@ export class PaymentsService {
     user: JwtPayloadAspirante,
     paymentIntentId: string,
   ): Promise<ConfirmPaymentResponseDto> {
+    const channelAspirante = await this.aspiranteRepository.findOne({
+      where: { id: user.sub, active: true },
+      select: ['id', 'paymentLink'],
+    });
+    if (hasBanortePaymentLink(channelAspirante?.paymentLink)) {
+      throw new BadRequestException(
+        'Este aspirante debe pagar con la liga Banorte',
+      );
+    }
+
     const intent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
 
     if (intent.metadata.aspiranteId !== user.sub) {
@@ -140,6 +166,7 @@ export class PaymentsService {
         tenantId: user.tenantId,
         aspiranteId: user.sub,
         stripePaymentIntentId: intent.id,
+        provider: PaymentProvider.Stripe,
         amountCents: intent.amount,
         currency: intent.currency,
         status: PaymentStatus.Pending,
@@ -219,6 +246,111 @@ export class PaymentsService {
     this.logger.debug(`Webhook Stripe ignorado: ${event.type}`);
   }
 
+  async claimPayment(
+    user: JwtPayloadAspirante,
+  ): Promise<ClaimPaymentResponseDto> {
+    const aspirante = await this.aspiranteRepository.findOne({
+      where: { id: user.sub, active: true },
+      relations: ['evaluationFlowStep'],
+    });
+    if (!aspirante?.evaluationFlowStep) {
+      throw new BadRequestException('Aspirante inválido o sin paso de flujo');
+    }
+
+    const existing = await this.paymentRepository.findOne({
+      where: { tenantId: user.tenantId, aspiranteId: user.sub },
+    });
+    if (
+      existing?.status === PaymentStatus.Paid ||
+      aspirante.evaluationFlowStep.orderId === 3
+    ) {
+      throw new ConflictException('Este aspirante ya completó el pago');
+    }
+
+    if (aspirante.evaluationFlowStep.orderId !== 2) {
+      throw new BadRequestException(
+        'El pago solo está disponible en el paso Registrado (order_id 2)',
+      );
+    }
+    if (!hasBanortePaymentLink(aspirante.paymentLink)) {
+      throw new BadRequestException(
+        'Este aspirante no tiene liga de pago Banorte',
+      );
+    }
+
+    if (aspirante.claimedAt) {
+      return { claimedAt: aspirante.claimedAt };
+    }
+
+    const claimedAt = new Date();
+    await this.aspiranteRepository.update({ id: aspirante.id }, { claimedAt });
+    return { claimedAt };
+  }
+
+  async confirmBanortePayment(
+    aspiranteId: string,
+  ): Promise<ConfirmBanortePaymentResponseDto> {
+    const aspirante = await this.aspiranteRepository.findOne({
+      where: { id: aspiranteId },
+      relations: ['evaluationFlowStep'],
+    });
+    if (!aspirante) {
+      throw new NotFoundException('Aspirante no encontrado');
+    }
+    if (!hasBanortePaymentLink(aspirante.paymentLink)) {
+      throw new BadRequestException(
+        'Este aspirante no tiene liga de pago Banorte',
+      );
+    }
+
+    let payment = await this.paymentRepository.findOne({
+      where: { tenantId: aspirante.tenantId, aspiranteId: aspirante.id },
+    });
+
+    if (payment?.status !== PaymentStatus.Paid) {
+      const catalog = await this.loadStripeCatalog();
+      if (!payment) {
+        payment = this.paymentRepository.create({
+          tenantId: aspirante.tenantId,
+          aspiranteId: aspirante.id,
+          stripePaymentIntentId: null,
+          provider: PaymentProvider.Banorte,
+          amountCents: catalog.amountCents,
+          currency: catalog.currency,
+          status: PaymentStatus.Pending,
+          paidAt: null,
+        });
+      }
+      payment.provider = PaymentProvider.Banorte;
+      payment.amountCents = catalog.amountCents;
+      payment.currency = catalog.currency;
+      payment.status = PaymentStatus.Paid;
+      payment.paidAt = new Date();
+      await this.paymentRepository.save(payment);
+    }
+
+    await this.evaluationFlowService.advanceOneStepIfAt(
+      aspirante.id,
+      2,
+      'payments:banorte_admin',
+    );
+
+    const updated = await this.aspiranteRepository.findOne({
+      where: { id: aspirante.id },
+      relations: ['evaluationFlowStep'],
+    });
+    if (!updated?.evaluationFlowStep) {
+      throw new InternalServerErrorException(
+        'Aspirante sin paso de flujo asignado',
+      );
+    }
+
+    return {
+      paid: true,
+      evaluationFlowOrderId: updated.evaluationFlowStep.orderId,
+    };
+  }
+
   private async processPaymentIntentSucceeded(
     intent: Stripe.PaymentIntent,
   ): Promise<void> {
@@ -240,6 +372,7 @@ export class PaymentsService {
         tenantId,
         aspiranteId,
         stripePaymentIntentId: intent.id,
+        provider: PaymentProvider.Stripe,
         amountCents: intent.amount,
         currency: intent.currency,
         status: PaymentStatus.Pending,
@@ -274,6 +407,7 @@ export class PaymentsService {
     currency: string,
   ): Promise<void> {
     payment.stripePaymentIntentId = stripePaymentIntentId;
+    payment.provider = PaymentProvider.Stripe;
     payment.amountCents = amountCents;
     payment.currency = currency;
     payment.status = PaymentStatus.Paid;
@@ -433,6 +567,7 @@ export class PaymentsService {
 
     if (existing) {
       existing.stripePaymentIntentId = stripePaymentIntentId;
+      existing.provider = PaymentProvider.Stripe;
       existing.amountCents = catalog.amountCents;
       existing.currency = catalog.currency;
       existing.status = PaymentStatus.Pending;
@@ -446,6 +581,7 @@ export class PaymentsService {
         tenantId: aspirante.tenantId,
         aspiranteId: aspirante.id,
         stripePaymentIntentId,
+        provider: PaymentProvider.Stripe,
         amountCents: catalog.amountCents,
         currency: catalog.currency,
         status: PaymentStatus.Pending,
@@ -486,6 +622,8 @@ export class PaymentsService {
     }
     const catalog = await this.loadStripeCatalog();
     return {
+      provider: 'stripe',
+      paymentLink: null,
       publishableKey,
       returnUrl: this.resolveReturnUrl(slug),
       clientSecret: intent.client_secret,
@@ -499,6 +637,45 @@ export class PaymentsService {
       requestThreeDSecure: this.getRequestThreeDSecure(),
       billingDefaults: this.buildBillingDefaults(aspirante),
     };
+  }
+
+  private async toBanorteIntentResponse(
+    aspirante: Aspirante,
+  ): Promise<CreatePaymentIntentResponseDto> {
+    const catalog = await this.loadStripeCatalog();
+    const paymentLink = aspirante.paymentLink?.trim() ?? '';
+    return {
+      provider: 'banorte',
+      paymentLink,
+      publishableKey: null,
+      returnUrl: null,
+      clientSecret: null,
+      paymentIntentId: null,
+      amountCents: catalog.amountCents,
+      currency: catalog.currency,
+      productName: catalog.productName,
+      productDescription: catalog.productDescription,
+      stripePriceId: null,
+      status: null,
+      requestThreeDSecure: null,
+      billingDefaults: null,
+    };
+  }
+
+  private async rejectIfTenantAccessBlocked(tenantId: string): Promise<void> {
+    const hospital = await this.hospitalRepository.findOne({
+      where: { uuid: tenantId, active: true },
+      select: ['accesoAbreAt', 'accesoCierraAt'],
+    });
+    if (!hospital) {
+      return;
+    }
+    if (isTenantAccessNotOpened(hospital)) {
+      throw new ForbiddenException(MSG_ACCESO_AUN_NO_ABIERTO);
+    }
+    if (isTenantAccessClosed(hospital)) {
+      throw new ForbiddenException(MSG_ACCESO_FINALIZADO);
+    }
   }
 
   private buildBillingDefaults(aspirante: Aspirante): PaymentBillingDefaultsDto {

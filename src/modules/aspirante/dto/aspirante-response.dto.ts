@@ -167,4 +167,26 @@ export class AspiranteResponseDto {
     nullable: true,
   })
   enviadoAlHospitalAt?: Date | null;
+
+  @ApiPropertyOptional({
+    example: 'https://ligasdepago.banorte.com/xyz',
+    nullable: true,
+    description:
+      'Liga Banorte. Si tiene valor, el aspirante paga por Banorte; si es null, Stripe.',
+  })
+  paymentLink?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'A12B34C56D',
+    nullable: true,
+    description: 'Referencia Banorte para conciliar cobros',
+  })
+  paymentReference?: string | null;
+
+  @ApiPropertyOptional({
+    example: '2026-09-18T22:00:00.000Z',
+    nullable: true,
+    description: 'Momento en que el aspirante pulsó Ya pagué (null si no aplica)',
+  })
+  claimedAt?: Date | null;
 }

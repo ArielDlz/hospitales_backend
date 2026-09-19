@@ -12,6 +12,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtPayloadAspirante } from '../../common/interfaces/jwt-payload.interface';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentIntentResponseDto } from './dto/create-payment-intent-response.dto';
+import { ClaimPaymentResponseDto } from './dto/claim-payment-response.dto';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
 import { ConfirmPaymentResponseDto } from './dto/confirm-payment-response.dto';
 
@@ -26,7 +27,7 @@ export class PaymentsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Iniciar pago: publishableKey, returnUrl, clientSecret, requestThreeDSecure, billingDefaults y PaymentIntent (2000 MXN). Solo si evaluationFlowOrderId = 2.',
+      'Iniciar pago. Stripe: clientSecret y Payment Element. Banorte: paymentLink si el aspirante tiene liga. Solo si evaluationFlowOrderId = 2.',
   })
   @ApiOkResponse({ type: CreatePaymentIntentResponseDto })
   @ApiConflictResponse({ description: 'El aspirante ya pagó' })
@@ -37,14 +38,35 @@ export class PaymentsController {
     return this.paymentsService.createPaymentIntent(user);
   }
 
+  @Post('claim')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Aspirante indica Ya pagué (Banorte). Guarda claimed_at. No confirma el cobro ni avanza el flujo.',
+  })
+  @ApiOkResponse({ type: ClaimPaymentResponseDto })
+  @ApiConflictResponse({ description: 'El aspirante ya pagó' })
+  @ApiResponse({
+    status: 400,
+    description: 'No está en el paso de pago o no tiene liga Banorte',
+  })
+  claimPayment(
+    @CurrentUser() user: JwtPayloadAspirante,
+  ): Promise<ClaimPaymentResponseDto> {
+    return this.paymentsService.claimPayment(user);
+  }
+
   @Post('confirm')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Confirmar pago exitoso y obtener JWT actualizado (paso Pagado). Idempotente con webhook.',
+      'Confirmar pago Stripe exitoso y obtener JWT actualizado (paso Pagado). Idempotente con webhook. No aplica si hay liga Banorte.',
   })
   @ApiOkResponse({ type: ConfirmPaymentResponseDto })
-  @ApiResponse({ status: 400, description: 'Pago no completado o no corresponde al aspirante' })
+  @ApiResponse({
+    status: 400,
+    description: 'Pago no completado, no corresponde al aspirante, o canal Banorte',
+  })
   confirmPayment(
     @CurrentUser() user: JwtPayloadAspirante,
     @Body() dto: ConfirmPaymentDto,

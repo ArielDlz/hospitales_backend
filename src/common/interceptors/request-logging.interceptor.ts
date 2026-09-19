@@ -37,6 +37,7 @@ function formatActor(user: JwtPayload | undefined): string {
       `slug=${user.slug}`,
       `registro=${user.registro}`,
       `flowOrderId=${user.evaluationFlowOrderId ?? '(n/a)'}`,
+      `paymentProvider=${user.paymentProvider ?? '(n/a)'}`,
     ].join(' ');
   }
   if (isAdminPayload(user)) {

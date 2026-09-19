@@ -13,6 +13,7 @@ import { Prueba } from '../pruebas/entities/prueba.entity';
 import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { Payment } from '../payments/entities/payment.entity';
+import { PaymentsModule } from '../payments/payments.module';
 import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
 import { SuperuserGuard } from '../auth/guards/superuser.guard';
 
@@ -29,6 +30,7 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
       AspiranteEvaluacion,
     ]),
     forwardRef(() => HospitalModule),
+    forwardRef(() => PaymentsModule),
     MailModule,
   ],
   controllers: [AspiranteController],

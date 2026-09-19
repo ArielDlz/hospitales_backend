@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   ParseUUIDPipe,
   Post,
@@ -13,6 +14,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  forwardRef,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -41,6 +43,8 @@ import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { SuperuserGuard } from '../auth/guards/superuser.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
+import { PaymentsService } from '../payments/payments.service';
+import { ConfirmBanortePaymentResponseDto } from '../payments/dto/confirm-banorte-payment-response.dto';
 
 const XLSX_MIME = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -55,6 +59,8 @@ export class AspiranteController {
   constructor(
     private readonly aspiranteService: AspiranteService,
     private readonly aspiranteImportService: AspiranteImportService,
+    @Inject(forwardRef(() => PaymentsService))
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   @Get()
@@ -98,6 +104,32 @@ export class AspiranteController {
       includeInactive === 'true',
       user,
     );
+  }
+
+  @Get('pagos-reclamados')
+  @UseGuards(SuperuserGuard)
+  @ApiOperation({
+    summary:
+      'Listar aspirantes que pulsaron Ya pagué y siguen en paso 2 (Registrado). Orden: claimed_at más antiguo primero, para priorizar confirmar-pago. Solo superusuario.',
+  })
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    description: 'UUID del hospital. Si se omite, lista reclamaciones de todos los hospitales.',
+  })
+  @ApiOkResponse({
+    description:
+      'Aspirantes con claimed_at y evaluationFlowOrderId=2. Incluye paymentLink, paymentReference y claimedAt.',
+    type: AspiranteResponseDto,
+    isArray: true,
+  })
+  @ApiResponse({ status: 400, description: 'Hospital no encontrado' })
+  @ApiResponse({ status: 403, description: 'Requiere superusuario' })
+  async findClaimedPayments(
+    @Query('tenantId') tenantId: string | undefined,
+    @CurrentUser() user: JwtPayloadAdmin,
+  ) {
+    return this.aspiranteService.findClaimedPayments(user, tenantId);
   }
 
   @Post()
@@ -264,6 +296,24 @@ export class AspiranteController {
       throw new BadRequestException('Debes enviar un archivo en el campo "file"');
     }
     return this.aspiranteImportService.import(file.buffer, tenantId ?? '');
+  }
+
+  @Post(':id/confirmar-pago')
+  @UseGuards(SuperuserGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Confirmar pago Banorte (solo superusuario). Marca payments como paid y avanza paso 2→3. Requiere payment_link.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del aspirante' })
+  @ApiOkResponse({ type: ConfirmBanortePaymentResponseDto })
+  @ApiResponse({ status: 400, description: 'El aspirante no tiene liga Banorte' })
+  @ApiResponse({ status: 403, description: 'Requiere superusuario' })
+  @ApiResponse({ status: 404, description: 'Aspirante no encontrado' })
+  confirmarPago(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ConfirmBanortePaymentResponseDto> {
+    return this.paymentsService.confirmBanortePayment(id);
   }
 
   @Delete(':id')

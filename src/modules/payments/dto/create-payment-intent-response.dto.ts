@@ -3,30 +3,51 @@ import { PaymentBillingDefaultsDto } from './payment-billing-defaults.dto';
 
 export type StripeThreeDSecureRequest = 'any' | 'challenge';
 
+export type PaymentIntentProvider = 'stripe' | 'banorte';
+
 export class CreatePaymentIntentResponseDto {
   @ApiProperty({
+    enum: ['stripe', 'banorte'],
+    example: 'stripe',
+    description:
+      'Canal de cobro. stripe = Payment Element; banorte = abrir paymentLink. Se decide por payment_link del aspirante.',
+  })
+  provider: PaymentIntentProvider;
+
+  @ApiPropertyOptional({
+    example: 'https://ligasdepago.banorte.com/xyz',
+    nullable: true,
+    description: 'URL de liga Banorte. null si provider es stripe.',
+  })
+  paymentLink: string | null;
+
+  @ApiPropertyOptional({
     example: 'pk_test_...',
-    description: 'Clave publicable de Stripe para inicializar Stripe.js',
+    nullable: true,
+    description: 'Clave publicable de Stripe. null si provider es banorte.',
   })
-  publishableKey: string;
+  publishableKey: string | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'https://hospital-general.arieldelao.dev/pago/exito',
-    description: 'URL de retorno por tenant (3D Secure / redirect)',
+    nullable: true,
+    description: 'URL de retorno por tenant (3D Secure / redirect). null si Banorte.',
   })
-  returnUrl: string;
+  returnUrl: string | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'pi_xxx_secret_xxx',
-    description: 'Client secret para montar Stripe Payment Element',
+    nullable: true,
+    description: 'Client secret para montar Stripe Payment Element. null si Banorte.',
   })
-  clientSecret: string;
+  clientSecret: string | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'pi_xxx',
-    description: 'ID del PaymentIntent en Stripe',
+    nullable: true,
+    description: 'ID del PaymentIntent en Stripe. null si Banorte.',
   })
-  paymentIntentId: string;
+  paymentIntentId: string | null;
 
   @ApiProperty({ example: 200000, description: 'Monto en centavos (2000 MXN)' })
   amountCents: number;
@@ -43,28 +64,35 @@ export class CreatePaymentIntentResponseDto {
   })
   productDescription: string | null;
 
-  @ApiProperty({ example: 'price_1Tr8J4FByYNF9ILkI3Wv6a4i' })
-  stripePriceId: string;
-
-  @ApiProperty({
-    example: 'requires_payment_method',
-    description:
-      'Estado del PaymentIntent en Stripe. Si es "processing", el frontend debe esperar/pollear sin crear un nuevo intent.',
+  @ApiPropertyOptional({
+    example: 'price_1Tr8J4FByYNF9ILkI3Wv6a4i',
+    nullable: true,
+    description: 'Price ID de Stripe. null si Banorte.',
   })
-  status: string;
+  stripePriceId: string | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
+    example: 'requires_payment_method',
+    nullable: true,
+    description:
+      'Estado del PaymentIntent en Stripe. Si es "processing", el frontend debe esperar/pollear sin crear un nuevo intent. null si Banorte.',
+  })
+  status: string | null;
+
+  @ApiPropertyOptional({
     enum: ['any', 'challenge'],
     example: 'challenge',
+    nullable: true,
     description:
-      'Debe pasarse a Payment Element como requestThreeDSecure; coincide con payment_method_options del PaymentIntent.',
+      'Debe pasarse a Payment Element como requestThreeDSecure. null si Banorte.',
   })
-  requestThreeDSecure: StripeThreeDSecureRequest;
+  requestThreeDSecure: StripeThreeDSecureRequest | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: PaymentBillingDefaultsDto,
+    nullable: true,
     description:
-      'Valores sugeridos para defaultValues.billingDetails en Payment Element (name, email, phone, address.country).',
+      'Valores sugeridos para defaultValues.billingDetails en Payment Element. null si Banorte.',
   })
-  billingDefaults: PaymentBillingDefaultsDto;
+  billingDefaults: PaymentBillingDefaultsDto | null;
 }

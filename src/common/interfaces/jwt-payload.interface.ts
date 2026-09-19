@@ -27,6 +27,12 @@ export interface JwtPayloadAspirante {
   evaluationFlowOrderId?: number;
   /** descripcion del paso actual (texto para UI) */
   evaluationFlowDescripcion?: string;
+  /**
+   * Canal de cobro derivado de payment_link al firmar el token.
+   * stripe si la liga está vacía; banorte si hay payment_link.
+   * Tokens emitidos antes de este campo no lo traen: el frontend debe usar POST /payments/intent.
+   */
+  paymentProvider?: 'stripe' | 'banorte';
   iat?: number;
   exp?: number;
 }
