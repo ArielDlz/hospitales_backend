@@ -57,6 +57,11 @@ describe('buildPrimerAccesoEmail', () => {
       'Notamos que aún no has ingresado a la plataforma a realizar tu proceso de evaluación psicométrica, este mensaje es un recordatorio, ya que el proceso está a punto de concluir. Por favor activa tu cuenta accediendo desde el siguiente botón:',
     );
     expect(html).toContain('Activar mi cuenta');
+    expect(html).toContain('+525527592438');
+    expect(html).toContain(
+      'Si tienes dudas o presentaste algún problema por favor comunícate vía whatsApp al +525527592438.',
+    );
+    expect(text).toContain('+525527592438');
     expect(html).toContain('REG-2024-001');
     expect(html).not.toContain('29 de agosto de 2026');
     expect(html).not.toContain(
@@ -69,6 +74,19 @@ describe('buildPrimerAccesoEmail', () => {
     expect(html).not.toContain('puedes ignorar este correo');
     expect(text).not.toContain('Este enlace caduca');
     expect(text).not.toContain('puedes ignorar este correo');
+  });
+
+  it('should omit the WhatsApp support line on the invitation', () => {
+    const { html, text } = buildPrimerAccesoEmail({
+      nombre: 'Juan',
+      apellidos: 'García López',
+      telefono: '5551234567',
+      registroHospital: 'REG-2024-001',
+      activacionUrl: 'https://h.example.com/confirmar?token=1',
+    });
+
+    expect(html).not.toContain('+525527592438');
+    expect(text).not.toContain('+525527592438');
   });
 
   it('should show placeholder when telefono is null', () => {

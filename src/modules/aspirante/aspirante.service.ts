@@ -100,6 +100,10 @@ export class AspiranteService {
       return this.sendRecordatorioPrimerAcceso(aspirante);
     }
 
+    if (orderId === 2) {
+      return this.sendRecordatorioPaso2(aspirante);
+    }
+
     if (orderId === 3 || orderId === 4) {
       return this.sendRecordatorioPruebasPendientes(aspirante);
     }
@@ -145,6 +149,38 @@ export class AspiranteService {
       const errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.error(
         `Fallo envío recordatorio primer acceso (aspirante ${aspirante.id}): ${errorMessage}`,
+      );
+      throw new InternalServerErrorException(
+        'No se pudo enviar el correo de recordatorio',
+      );
+    }
+
+    return {
+      message: 'Recordatorio enviado correctamente',
+      emailEnviado: true,
+    };
+  }
+
+  private async sendRecordatorioPaso2(
+    aspirante: Aspirante,
+  ): Promise<RecordatorioPruebasResponseDto> {
+    if (!aspirante.active) {
+      throw new BadRequestException(
+        'El aspirante en paso 2 debe estar activo',
+      );
+    }
+
+    const hospital = await this.hospitalService.findByUuid(aspirante.tenantId);
+    if (!hospital) {
+      throw new BadRequestException('Hospital no encontrado');
+    }
+
+    try {
+      await this.mailService.sendRecordatorioPaso2Email(aspirante, hospital);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Fallo envío recordatorio paso 2 (aspirante ${aspirante.id}): ${errorMessage}`,
       );
       throw new InternalServerErrorException(
         'No se pudo enviar el correo de recordatorio',

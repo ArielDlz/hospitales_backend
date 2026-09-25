@@ -152,7 +152,7 @@ export class AspiranteController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Enviar recordatorio (solo administrador). Paso 1 (active=false): reenvía invitación con el mismo token y expiry renovado (+7 días). Paso 3 o 4 (active=true): recordatorio de pruebas pendientes si hay menos intentos por_evaluar que pruebas habilitadas.',
+      'Enviar recordatorio (solo administrador). Paso 1 (active=false): reenvía invitación con el mismo token y expiry renovado (+7 días). Paso 2 (active=true): recordatorio de periodo por finalizar; CTA login. Paso 3 o 4 (active=true): recordatorio de pruebas pendientes si hay menos intentos por_evaluar que pruebas habilitadas.',
   })
   @ApiOkResponse({
     description: 'Recordatorio enviado',
@@ -161,7 +161,7 @@ export class AspiranteController {
   @ApiResponse({
     status: 400,
     description:
-      'No elegible: paso 1 activo o sin token; paso distinto de 1/3/4; o paso 3/4 con suficientes por_evaluar',
+      'No elegible: paso 1 activo o sin token; paso 2 inactivo; paso distinto de 1/2/3/4; o paso 3/4 con suficientes por_evaluar',
   })
   @ApiResponse({ status: 403, description: 'Solo administrador' })
   @ApiResponse({ status: 404, description: 'Aspirante no encontrado' })

@@ -110,6 +110,7 @@ describe('MailService', () => {
       'https://hospital-test.arieldelao.dev/confirmar-acceso?token=token-reminder',
     );
     expect(html).toContain('Activar mi cuenta');
+    expect(html).toContain('+525527592438');
     expect(html).not.toContain('29 de agosto de 2026');
   });
 
@@ -171,6 +172,30 @@ describe('MailService', () => {
         nombre: 'María',
         password: 'pass',
       }),
+    ).rejects.toThrow('Brevo no configurado');
+  });
+
+  it('sendRecordatorioPaso2Email should call Brevo with login CTA', async () => {
+    await service.sendRecordatorioPaso2Email(aspirante, hospital);
+
+    expect(brevoClient.sendTransactional).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sender: { email: 'registro@arieldelao.dev', name: 'Registro' },
+        to: [{ email: 'aspirante@example.com' }],
+        subject: 'El periodo de evaluación psicométrica está por finalizar.',
+        htmlContent: expect.stringContaining('Presentar pruebas'),
+        textContent: expect.stringContaining('+525527592438'),
+      }),
+    );
+    const html = brevoClient.sendTransactional.mock.calls[0][0].htmlContent;
+    expect(html).toContain('https://hospital-test.arieldelao.dev/login');
+  });
+
+  it('sendRecordatorioPaso2Email should throw when Brevo is not configured', async () => {
+    brevoClient.isEnabled.mockReturnValue(false);
+
+    await expect(
+      service.sendRecordatorioPaso2Email(aspirante, hospital),
     ).rejects.toThrow('Brevo no configurado');
   });
 

@@ -27,6 +27,9 @@ const INTRO_INVITACION =
 const INTRO_RECORDATORIO =
   'Notamos que aún no has ingresado a la plataforma a realizar tu proceso de evaluación psicométrica, este mensaje es un recordatorio, ya que el proceso está a punto de concluir. Por favor activa tu cuenta accediendo desde el siguiente botón:';
 
+const SUPPORT_LINE =
+  'Si tienes dudas o presentaste algún problema por favor comunícate vía whatsApp al +525527592438.';
+
 export function buildPrimerAccesoEmail(
   params: PrimerAccesoEmailParams,
 ): PrimerAccesoEmailContent {
@@ -40,7 +43,8 @@ export function buildPrimerAccesoEmail(
   } = params;
 
   const telefonoDisplay = telefono?.trim() || 'No indicado';
-  const intro = variant === 'recordatorio' ? INTRO_RECORDATORIO : INTRO_INVITACION;
+  const isRecordatorio = variant === 'recordatorio';
+  const intro = isRecordatorio ? INTRO_RECORDATORIO : INTRO_INVITACION;
 
   const text = [
     PLATFORM_TITLE,
@@ -48,6 +52,7 @@ export function buildPrimerAccesoEmail(
     `Hola, ${nombre}`,
     '',
     intro,
+    ...(isRecordatorio ? ['', SUPPORT_LINE] : []),
     '',
     activacionUrl,
     '',
@@ -81,9 +86,16 @@ export function buildPrimerAccesoEmail(
           <tr>
             <td style="padding:32px;">
               <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">Hola, ${escapeHtml(nombre)}</p>
-              <p style="margin:0 0 24px;font-size:16px;line-height:1.5;">
+              <p style="margin:0 0 ${isRecordatorio ? '16' : '24'}px;font-size:16px;line-height:1.5;">
                 ${escapeHtml(intro)}
               </p>
+              ${
+                isRecordatorio
+                  ? `<p style="margin:0 0 24px;font-size:16px;line-height:1.5;">
+                ${escapeHtml(SUPPORT_LINE)}
+              </p>`
+                  : ''
+              }
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 32px;">
                 <tr>
                   <td align="center">
