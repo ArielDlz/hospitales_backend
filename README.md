@@ -238,7 +238,7 @@ Rutas protegidas requieren el header: `Authorization: Bearer <accessToken>`
 |--------|------|-------------|
 | GET | `/aspirantes` | Listar aspirantes. Requiere `tenantId` o `slug`. Por defecto **solo activos** (`includeInactive` omitido o distinto de `true`). Evaluador con `slug=admin` ve aspirantes de sus hospitales asignados. |
 | POST | `/aspirantes` | Crear aspirante e enviar correo de activación |
-| POST | `/aspirantes/recordatorio-pruebas` | Enviar recordatorio (**solo administrador**). Body: `{ email, tenantId }`. **Paso 1** (`active=false`, con `primerAccesoToken`): reenvía invitación (mismo token, `primerAccesoExpira` = now+7 días); CTA activación. **Paso 3 o 4** (`active=true`): recordatorio de pruebas pendientes si hay menos intentos `por_evaluar` que pruebas habilitadas; CTA: `https://{slug}.{PRIMER_ACCESO_DOMAIN}/login` |
+| POST | `/aspirantes/recordatorio-pruebas` | Enviar recordatorio (**solo administrador**). Body: `{ email, tenantId }`. **Paso 1** (`active=false`, con `primerAccesoToken`): reenvía invitación (mismo token, `primerAccesoExpira` = now+7 días); CTA activación. **Paso 2** (`active=true`): recordatorio de periodo por finalizar; CTA: `https://{slug}.{PRIMER_ACCESO_DOMAIN}/login`. **Paso 3 o 4** (`active=true`): recordatorio de pruebas pendientes si hay menos intentos `por_evaluar` que pruebas habilitadas; CTA: `https://{slug}.{PRIMER_ACCESO_DOMAIN}/login` |
 
 Ejemplo para tabla de evaluador (solo activos, todos sus hospitales):
 

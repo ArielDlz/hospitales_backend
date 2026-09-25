@@ -7,6 +7,7 @@ import { buildPrimerAccesoEmail } from './templates/primer-acceso.template';
 import { buildActivarCuentaEmail } from './templates/activar-cuenta.template';
 import { buildEvaluadorRegistroEmail } from './templates/evaluador-registro.template';
 import { buildRecordatorioPruebasEmail } from './templates/recordatorio-pruebas.template';
+import { buildRecordatorioPaso2Email } from './templates/recordatorio-paso2.template';
 
 export interface MailFailureAlertContext {
   aspiranteId: string;
@@ -142,6 +143,28 @@ export class MailService {
       throw new Error('PRIMER_ACCESO_DOMAIN is required for aspirante login links');
     }
     return `https://${hospital.slug}.${domain}/login`;
+  }
+
+  async sendRecordatorioPaso2Email(
+    aspirante: Aspirante,
+    hospital: Hospital,
+  ): Promise<void> {
+    this.assertBrevoConfigured();
+
+    const loginUrl = this.buildAspiranteLoginUrl(hospital);
+    const { subject, html, text } = buildRecordatorioPaso2Email({
+      nombre: aspirante.nombre,
+      loginUrl,
+    });
+
+    const sender = this.getSender();
+    await this.brevoClient.sendTransactional({
+      sender,
+      to: [{ email: aspirante.email }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    });
   }
 
   async sendRecordatorioPruebasEmail(

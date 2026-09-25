@@ -34,6 +34,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
   const mailService = {
     sendRecordatorioPruebasEmail: jest.fn(),
     sendRecordatorioPrimerAccesoEmail: jest.fn(),
+    sendRecordatorioPaso2Email: jest.fn(),
   };
   const usuarioRepo = {
     find: jest.fn().mockResolvedValue([]),
@@ -123,7 +124,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('400 si el paso no es 1, 3 ni 4', async () => {
+  it('400 si el paso no es 1, 2, 3 ni 4', async () => {
     aspiranteRepo.find.mockResolvedValue([
       {
         id: 'asp-1',
@@ -186,6 +187,60 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(mailService.sendRecordatorioPruebasEmail).not.toHaveBeenCalled();
+  });
+
+  it('paso 2 active: envía recordatorio de periodo por finalizar', async () => {
+    const aspirante = {
+      id: 'asp-1',
+      tenantId,
+      email: 'a@test.com',
+      nombre: 'Juan',
+      active: true,
+      evaluationFlowStep: { orderId: 2 },
+    };
+    aspiranteRepo.find.mockResolvedValue([aspirante]);
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      slug: 'hospital-test',
+      nombre: 'Hospital Test',
+    });
+    mailService.sendRecordatorioPaso2Email.mockResolvedValue(undefined);
+
+    const result = await service.sendRecordatorioPruebas(
+      { email: 'a@test.com', tenantId },
+      adminUser,
+    );
+
+    expect(result).toEqual({
+      message: 'Recordatorio enviado correctamente',
+      emailEnviado: true,
+    });
+    expect(mailService.sendRecordatorioPaso2Email).toHaveBeenCalledWith(
+      aspirante,
+      expect.objectContaining({ slug: 'hospital-test' }),
+    );
+    expect(mailService.sendRecordatorioPruebasEmail).not.toHaveBeenCalled();
+    expect(mailService.sendRecordatorioPrimerAccesoEmail).not.toHaveBeenCalled();
+  });
+
+  it('paso 2 inactive: rechaza', async () => {
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        email: 'a@test.com',
+        active: false,
+        evaluationFlowStep: { orderId: 2 },
+      },
+    ]);
+
+    await expect(
+      service.sendRecordatorioPruebas(
+        { email: 'a@test.com', tenantId },
+        adminUser,
+      ),
+    ).rejects.toThrow('El aspirante en paso 2 debe estar activo');
+    expect(mailService.sendRecordatorioPaso2Email).not.toHaveBeenCalled();
   });
 
   it('envía el recordatorio de pruebas cuando es elegible (paso 3 active)', async () => {
