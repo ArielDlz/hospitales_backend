@@ -31,6 +31,7 @@ import {
 } from './dto/aspirante-evaluacion-response.dto';
 import { InformePdfService } from './informe-pdf.service';
 import { FirmarInformeResponseDto } from './dto/firmar-informe-response.dto';
+import { InformeExtendidoResponseDto } from './dto/informe-extendido-response.dto';
 import { AsignarEvaluacionResponseDto } from './dto/asignar-evaluacion-response.dto';
 import { Hospital } from '../hospital/hospital.entity';
 import { S3StorageService } from '../storage/s3-storage.service';
@@ -39,6 +40,7 @@ import { buildEnviarAlHospitalFlags } from '../google-drive/enviar-al-hospital.f
 import { EnviarInformeAlHospitalResponseDto } from './dto/enviar-informe-al-hospital-response.dto';
 import {
   buildInformeDriveFilename,
+  buildInformeExtendidoFilename,
   buildInformeFirmadoFilename,
   buildInformeFirmadoS3Key,
   resolveInformeFirmadoFilename,
@@ -483,6 +485,83 @@ export class EvaluacionesService {
     };
   }
 
+  async guardarInformeExtendido(
+    aspiranteId: string,
+    informeExtendido: string,
+  ): Promise<InformeExtendidoResponseDto> {
+    const aspirante = await this.loadAspiranteWithFlow(aspiranteId);
+    if (!aspirante.veredictoInforme?.trim()) {
+      throw new BadRequestException('El informe aún no está firmado');
+    }
+
+    const { evaluacion, veredicto, emailEvaluador } =
+      await this.loadInformePdfContext(aspiranteId);
+    const stampSigner = await this.resolveInformeExtendidoSigner(
+      evaluacion.idEvaluador,
+    );
+    const markdown = informeExtendido.trim();
+    const nombreFirmante = stampSigner.nombre?.trim() || stampSigner.email;
+
+    const buffer = await this.informePdfService.buildPdf({
+      nombre: aspirante.nombre,
+      apellidos: aspirante.apellidos,
+      registroHospital: aspirante.registroHospital,
+      especialidad: aspirante.especialidad,
+      genero: aspirante.genero,
+      fechaNacimiento: aspirante.fechaNacimiento,
+      emailEvaluador: stampSigner.email?.trim() || emailEvaluador,
+      comentario: evaluacion.comentario,
+      veredictoEtiqueta: veredicto.etiqueta,
+      veredictoCodigo: veredicto.codigo,
+      fechaInforme: new Date(),
+      firmaUrl: stampSigner.firma ?? undefined,
+      nombreFirmante,
+      cedulaProfesional: stampSigner.cedulaProfesional,
+      informeExtendido: markdown || null,
+    });
+
+    const hospital = await this.hospitalRepository.findOne({
+      where: { uuid: aspirante.tenantId },
+      select: ['slug'],
+    });
+    if (!hospital?.slug?.trim()) {
+      throw new BadRequestException(
+        'No se puede regenerar el informe: el hospital no tiene slug configurado',
+      );
+    }
+
+    const filename = buildInformeExtendidoFilename(
+      aspirante.documento,
+      veredicto.codigo,
+      veredicto.etiqueta,
+      new Date(),
+    );
+    const key = buildInformeFirmadoS3Key({
+      slug: hospital.slug,
+      especialidad: aspirante.especialidad,
+      filename,
+    });
+    const uploaded = await this.s3Storage.uploadBuffer({
+      buffer,
+      contentType: 'application/pdf',
+      key,
+    });
+
+    evaluacion.informeExtendido = markdown || null;
+    await this.aspiranteEvaluacionRepository.save(evaluacion);
+    await this.aspiranteRepository.update(
+      { id: aspiranteId },
+      { veredictoInforme: uploaded.url },
+    );
+
+    return {
+      veredictoInforme: uploaded.url,
+      message: markdown
+        ? 'Informe extendido guardado correctamente'
+        : 'Informe extendido eliminado correctamente',
+    };
+  }
+
   async downloadInformeFirmado(
     aspiranteId: string,
     user: JwtPayloadAdmin,
@@ -856,6 +935,44 @@ export class EvaluacionesService {
         'El aspirante no está disponible para evaluación (se requiere paso 5 o 6)',
       );
     }
+  }
+
+  private async resolveInformeExtendidoSigner(
+    evaluadorId: string,
+  ): Promise<UsuarioAdministrativo> {
+    const evaluador = await this.usuarioRepository.findOne({
+      where: { id: evaluadorId },
+      select: [
+        'id',
+        'nombre',
+        'firma',
+        'email',
+        'cedulaProfesional',
+        'supervisorId',
+      ],
+    });
+    if (!evaluador) {
+      throw new NotFoundException('Evaluador del informe no encontrado');
+    }
+    if (evaluador.firma?.trim()) {
+      return evaluador;
+    }
+    if (!evaluador.supervisorId) {
+      throw new ForbiddenException(
+        'El evaluador del informe no tiene firma y no tiene supervisor',
+      );
+    }
+
+    const supervisor = await this.usuarioRepository.findOne({
+      where: { id: evaluador.supervisorId },
+      select: ['id', 'nombre', 'firma', 'email', 'cedulaProfesional'],
+    });
+    if (!supervisor?.firma?.trim()) {
+      throw new ForbiddenException(
+        'El evaluador del informe no tiene firma y su supervisor tampoco',
+      );
+    }
+    return supervisor;
   }
 
   private async loadInformePdfContext(

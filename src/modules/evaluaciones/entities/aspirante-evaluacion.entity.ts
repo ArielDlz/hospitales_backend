@@ -23,6 +23,9 @@ export class AspiranteEvaluacion {
   @Column({ type: 'text' })
   comentario: string;
 
+  @Column({ name: 'informe_extendido', type: 'text', nullable: true })
+  informeExtendido: string | null;
+
   @Column({ name: 'confirmed_at', type: 'timestamptz', nullable: true })
   confirmedAt: Date | null;
 

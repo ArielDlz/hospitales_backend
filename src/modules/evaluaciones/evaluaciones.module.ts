@@ -16,6 +16,7 @@ import { AspiranteModule } from '../aspirante/aspirante.module';
 import { PruebasModule } from '../pruebas/pruebas.module';
 import { StorageModule } from '../storage/storage.module';
 import { GoogleDriveModule } from '../google-drive/google-drive.module';
+import { SuperuserGuard } from '../auth/guards/superuser.guard';
 
 @Module({
   imports: [
@@ -36,6 +37,6 @@ import { GoogleDriveModule } from '../google-drive/google-drive.module';
     GoogleDriveModule,
   ],
   controllers: [EvaluacionesController],
-  providers: [EvaluacionesService, InformePdfService],
+  providers: [EvaluacionesService, InformePdfService, SuperuserGuard],
 })
 export class EvaluacionesModule {}
