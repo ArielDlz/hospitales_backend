@@ -673,14 +673,17 @@ export class InformePdfService {
       });
     y = doc.y + 16;
 
+    const textInset = COMENTARIO_EXTRA_INSET_PT;
+    const textX = contentX + textInset;
+    const textWidth = contentWidth - 2 * textInset;
     const blocks = parseInformeExtendidoMarkdown(markdown);
     for (const block of blocks) {
       if (block.type === 'heading') {
         const fontSize = block.level === 1 ? 14 : block.level === 2 ? 12 : 11;
         y = this.drawMarkdownSpans(doc, block.spans, {
-          x: contentX,
+          x: textX,
           y,
-          width: contentWidth,
+          width: textWidth,
           bottom,
           fontSize,
           color: BRAND_COLOR,
@@ -693,27 +696,29 @@ export class InformePdfService {
 
       if (block.type === 'bullet') {
         y = this.drawMarkdownSpans(doc, block.spans, {
-          x: contentX,
+          x: textX,
           y,
-          width: contentWidth,
+          width: textWidth,
           bottom,
           fontSize: 11,
           color: '#000000',
           prefix: '• ',
-          gapAfter: 4,
+          justify: true,
+          gapAfter: 6,
           getBodyStartY,
         });
         continue;
       }
 
       y = this.drawMarkdownSpans(doc, block.spans, {
-        x: contentX,
+        x: textX,
         y,
-        width: contentWidth,
+        width: textWidth,
         bottom,
         fontSize: 11,
         color: '#000000',
-        gapAfter: 8,
+        justify: true,
+        gapAfter: 10,
         getBodyStartY,
       });
     }
@@ -733,6 +738,7 @@ export class InformePdfService {
       getBodyStartY: () => number;
       prefix?: string;
       forceBold?: boolean;
+      justify?: boolean;
     },
   ): number {
     const {
@@ -745,88 +751,113 @@ export class InformePdfService {
       getBodyStartY,
       prefix = '',
       forceBold = false,
+      justify = false,
     } = options;
-    const lineHeight = fontSize + 4;
+    const lineHeight = fontSize + 5;
     let lineY = options.y;
 
-    const tokens = spans.flatMap((span) =>
-      span.text.split(/(\s+)/).filter((part) => part.length > 0).map((text) => ({
-        text,
-        bold: forceBold || span.bold,
-        italic: span.italic,
-      })),
-    );
-    if (tokens.length === 0) {
+    const styledWords = this.markdownWords(spans, forceBold, doc, fontSize);
+    if (styledWords.length === 0) {
       return lineY + gapAfter;
     }
 
     const prefixWidth = prefix
       ? doc.font('Helvetica').fontSize(fontSize).widthOfString(prefix)
       : 0;
-    let cursorX = x;
-    let lineStarted = false;
-    let drewPrefix = false;
+    const textX = x + prefixWidth;
+    const textWidth = Math.max(width - prefixWidth, 1);
+    const spaceWidth = doc.font('Helvetica').fontSize(fontSize).widthOfString(' ');
 
-    const breakLine = () => {
-      lineY += lineHeight;
-      cursorX = x + prefixWidth;
-      lineStarted = false;
+    const lines: Array<typeof styledWords> = [];
+    let current: typeof styledWords = [];
+    let currentWidth = 0;
+    for (const word of styledWords) {
+      const nextWidth =
+        currentWidth + (current.length > 0 ? spaceWidth : 0) + word.width;
+      if (current.length > 0 && nextWidth > textWidth) {
+        lines.push(current);
+        current = [word];
+        currentWidth = word.width;
+      } else {
+        current.push(word);
+        currentWidth = nextWidth;
+      }
+    }
+    if (current.length > 0) {
+      lines.push(current);
+    }
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       if (lineY + lineHeight > bottom) {
         doc.addPage();
         lineY = getBodyStartY();
-        cursorX = x + prefixWidth;
-      }
-    };
-
-    if (lineY + lineHeight > bottom) {
-      doc.addPage();
-      lineY = getBodyStartY();
-    }
-
-    for (const token of tokens) {
-      if (/^\s+$/.test(token.text)) {
-        if (!lineStarted) continue;
-        const spaceWidth = doc
-          .font(this.markdownFont(token.bold, token.italic))
-          .fontSize(fontSize)
-          .widthOfString(' ');
-        if (cursorX + spaceWidth > x + width) {
-          breakLine();
-        } else {
-          cursorX += spaceWidth;
-        }
-        continue;
       }
 
-      doc.font(this.markdownFont(token.bold, token.italic)).fontSize(fontSize);
-      const tokenWidth = doc.widthOfString(token.text);
-      const indent = lineStarted ? 0 : prefixWidth;
-      if (lineStarted && cursorX + tokenWidth > x + width) {
-        breakLine();
-      }
+      const line = lines[lineIndex];
+      const isLast = lineIndex === lines.length - 1;
+      const gaps = line.length - 1;
+      const wordsWidth = line.reduce((sum, word) => sum + word.width, 0);
+      const justifyLine = justify && !isLast && gaps > 0;
+      const gap = justifyLine
+        ? (textWidth - wordsWidth) / gaps
+        : spaceWidth;
 
-      if (!lineStarted && prefix && !drewPrefix) {
+      if (prefix && lineIndex === 0) {
         doc
           .font('Helvetica')
           .fontSize(fontSize)
           .fillColor(color)
           .text(prefix, x, lineY, { lineBreak: false });
-        cursorX = x + prefixWidth;
-        drewPrefix = true;
-      } else if (!lineStarted) {
-        cursorX = x + indent;
       }
 
-      doc
-        .font(this.markdownFont(token.bold, token.italic))
-        .fontSize(fontSize)
-        .fillColor(color)
-        .text(token.text, cursorX, lineY, { lineBreak: false });
-      cursorX += tokenWidth;
-      lineStarted = true;
+      let cursorX = textX;
+      for (let wordIndex = 0; wordIndex < line.length; wordIndex++) {
+        const word = line[wordIndex];
+        doc
+          .font(this.markdownFont(word.bold, word.italic))
+          .fontSize(fontSize)
+          .fillColor(color)
+          .text(word.text, cursorX, lineY, { lineBreak: false });
+        cursorX += word.width;
+        if (wordIndex < line.length - 1) {
+          cursorX += gap;
+        }
+      }
+
+      lineY += lineHeight;
     }
 
-    return lineY + lineHeight + gapAfter;
+    return lineY + gapAfter;
+  }
+
+  private markdownWords(
+    spans: InformeMarkdownSpan[],
+    forceBold: boolean,
+    doc: InstanceType<typeof PDFDocument>,
+    fontSize: number,
+  ): Array<{ text: string; bold: boolean; italic: boolean; width: number }> {
+    const words: Array<{
+      text: string;
+      bold: boolean;
+      italic: boolean;
+      width: number;
+    }> = [];
+
+    for (const span of spans) {
+      const parts = span.text.split(/\s+/).filter((part) => part.length > 0);
+      const bold = forceBold || span.bold;
+      doc.font(this.markdownFont(bold, span.italic)).fontSize(fontSize);
+      for (const text of parts) {
+        words.push({
+          text,
+          bold,
+          italic: span.italic,
+          width: doc.widthOfString(text),
+        });
+      }
+    }
+
+    return words;
   }
 
   private markdownFont(bold: boolean, italic: boolean): string {
