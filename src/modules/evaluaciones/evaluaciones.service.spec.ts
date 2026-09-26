@@ -1162,4 +1162,164 @@ describe('EvaluacionesService', () => {
       expect(result.evaluationFlowOrderId).toBe(7);
     });
   });
+
+  describe('guardarInformeExtendido', () => {
+    const signedAspirante = {
+      ...aspiranteStep6AssignedA,
+      veredictoInforme: nestedInformeUrl,
+    };
+    const evaluacion = {
+      id: 1,
+      idAspirante: aspiranteId,
+      idEvaluador: evaluadorAId,
+      idVeredicto: 1,
+      comentario: 'Informe final',
+      informeExtendido: null as string | null,
+    };
+    const evaluadorConFirma = {
+      id: evaluadorAId,
+      nombre: 'Eval Firmante',
+      firma: 'https://example.com/firma-eval.png',
+      email: 'evaluador-a@hospital.com',
+      cedulaProfesional: '998877',
+      supervisorId: null as string | null,
+    };
+
+    beforeEach(() => {
+      aspiranteRepo.findOne.mockResolvedValue(signedAspirante);
+      aspiranteEvaluacionRepo.findOne.mockResolvedValue(evaluacion);
+      veredictoRepo.findOne.mockResolvedValue({
+        idVeredicto: 1,
+        codigo: 'apto',
+        etiqueta: 'Apto',
+      });
+      hospitalRepo.findOne.mockResolvedValue({ slug: 'hospital-general' });
+      usuarioRepo.findOne.mockImplementation(
+        async (opts: { where: { id: string }; select?: string[] }) => {
+          if (opts.select?.includes('email') && opts.select.length === 1) {
+            return { email: 'evaluador-a@hospital.com' };
+          }
+          if (opts.where.id === evaluadorAId) {
+            return evaluadorConFirma;
+          }
+          return null;
+        },
+      );
+    });
+
+    it('rechaza si el informe no está firmado y no escribe', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...signedAspirante,
+        veredictoInforme: null,
+      });
+
+      await expect(
+        service.guardarInformeExtendido(aspiranteId, '## Nota'),
+      ).rejects.toThrow(BadRequestException);
+      expect(aspiranteEvaluacionRepo.save).not.toHaveBeenCalled();
+      expect(s3Storage.uploadBuffer).not.toHaveBeenCalled();
+    });
+
+    it('rechaza si el evaluador no tiene firma ni supervisor', async () => {
+      usuarioRepo.findOne.mockImplementation(
+        async (opts: { where: { id: string }; select?: string[] }) => {
+          if (opts.select?.includes('email') && opts.select.length === 1) {
+            return { email: 'evaluador-a@hospital.com' };
+          }
+          return {
+            ...evaluadorConFirma,
+            firma: null,
+            supervisorId: null,
+          };
+        },
+      );
+
+      await expect(
+        service.guardarInformeExtendido(aspiranteId, 'texto'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(aspiranteEvaluacionRepo.save).not.toHaveBeenCalled();
+      expect(s3Storage.uploadBuffer).not.toHaveBeenCalled();
+    });
+
+    it('usa la firma del supervisor si el evaluador no tiene firma', async () => {
+      usuarioRepo.findOne.mockImplementation(
+        async (opts: { where: { id: string }; select?: string[] }) => {
+          if (opts.select?.includes('email') && opts.select.length === 1) {
+            return { email: 'evaluador-a@hospital.com' };
+          }
+          if (opts.where.id === supervisorId) {
+            return {
+              id: supervisorId,
+              nombre: 'Supervisor Firmante',
+              firma: 'https://example.com/firma-sup.png',
+              email: 'supervisor@hospital.com',
+              cedulaProfesional: '1122334',
+            };
+          }
+          return {
+            ...evaluadorConFirma,
+            firma: '  ',
+            supervisorId,
+          };
+        },
+      );
+
+      await service.guardarInformeExtendido(aspiranteId, 'Seguimiento');
+
+      expect(informePdfService.buildPdf).toHaveBeenCalledWith(
+        expect.objectContaining({
+          firmaUrl: 'https://example.com/firma-sup.png',
+          nombreFirmante: 'Supervisor Firmante',
+          cedulaProfesional: '1122334',
+          emailEvaluador: 'supervisor@hospital.com',
+          informeExtendido: 'Seguimiento',
+        }),
+      );
+    });
+
+    it('guarda el markdown, sube un objeto nuevo y no cambia el paso', async () => {
+      const result = await service.guardarInformeExtendido(
+        aspiranteId,
+        '## Nota\n\nTexto **nuevo**',
+      );
+
+      expect(informePdfService.buildPdf).toHaveBeenCalledWith(
+        expect.objectContaining({
+          firmaUrl: 'https://example.com/firma-eval.png',
+          nombreFirmante: 'Eval Firmante',
+          informeExtendido: '## Nota\n\nTexto **nuevo**',
+          fechaInforme: expect.any(Date),
+        }),
+      );
+      expect(s3Storage.uploadBuffer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentType: 'application/pdf',
+          key: expect.stringMatching(
+            /^informes-firmados\/hospital-general\/cardiologia\/PEGJ880527HDFRRL09_1_A_25_2027_extendido_\d{8}T\d{6}\.pdf$/,
+          ),
+        }),
+      );
+      expect(evaluacion.informeExtendido).toBe('## Nota\n\nTexto **nuevo**');
+      expect(aspiranteEvaluacionRepo.save).toHaveBeenCalledWith(evaluacion);
+      expect(aspiranteRepo.update).toHaveBeenCalledWith(
+        { id: aspiranteId },
+        { veredictoInforme: nestedInformeUrl },
+      );
+      expect(evaluationFlowService.setFlowStepToOrderId).not.toHaveBeenCalled();
+      expect(result.message).toBe('Informe extendido guardado correctamente');
+      expect(result.veredictoInforme).toBe(nestedInformeUrl);
+    });
+
+    it('cadena vacía borra el anexo y regenera el PDF sin páginas extra', async () => {
+      evaluacion.informeExtendido = 'anterior';
+
+      const result = await service.guardarInformeExtendido(aspiranteId, '   ');
+
+      expect(informePdfService.buildPdf).toHaveBeenCalledWith(
+        expect.objectContaining({ informeExtendido: null }),
+      );
+      expect(evaluacion.informeExtendido).toBeNull();
+      expect(result.message).toBe('Informe extendido eliminado correctamente');
+    });
+  });
 });

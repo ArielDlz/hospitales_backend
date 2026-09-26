@@ -33,6 +33,10 @@ import {
   resolveResultadoPerfilKey,
   RESULTADO_PERFIL_OPTIONS,
 } from './informe-pdf.utils';
+import {
+  InformeMarkdownSpan,
+  parseInformeExtendidoMarkdown,
+} from './informe-extendido-markdown';
 
 export interface InformePdfInput {
   nombre: string;
@@ -49,6 +53,8 @@ export interface InformePdfInput {
   firmaUrl?: string;
   nombreFirmante?: string;
   cedulaProfesional?: string | null;
+  /** Markdown anexo. Omitido o vacío: el PDF no agrega páginas extra. */
+  informeExtendido?: string | null;
 }
 
 @Injectable()
@@ -392,7 +398,19 @@ export class InformePdfService {
           .stroke();
       }
 
-      this.drawPageNumbers(doc, contentX, contentWidth);
+      const mainPageCount = doc.bufferedPageRange().count;
+      this.drawPageNumbers(doc, contentX, contentWidth, mainPageCount);
+
+      const informeExtendido = data.informeExtendido?.trim();
+      if (informeExtendido) {
+        this.drawInformeExtendido(
+          doc,
+          contentX,
+          contentWidth,
+          informeExtendido,
+          () => bodyStartY,
+        );
+      }
 
       doc.end();
     });
@@ -602,11 +620,13 @@ export class InformePdfService {
     doc: InstanceType<typeof PDFDocument>,
     contentX: number,
     contentWidth: number,
+    mainPageCount?: number,
   ): void {
     const range = doc.bufferedPageRange();
-    const totalPages = range.count;
+    const numberedPages = mainPageCount ?? range.count;
+    const totalPages = numberedPages;
 
-    for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+    for (let pageIndex = 0; pageIndex < numberedPages; pageIndex++) {
       doc.switchToPage(pageIndex);
       doc
         .font('Helvetica')
@@ -619,6 +639,201 @@ export class InformePdfService {
           { width: contentWidth, align: 'center' },
         );
     }
+  }
+
+  private drawInformeExtendido(
+    doc: InstanceType<typeof PDFDocument>,
+    contentX: number,
+    contentWidth: number,
+    markdown: string,
+    getBodyStartY: () => number,
+  ): void {
+    const bottom = PAGE_HEIGHT - MARGIN_PT - 16;
+    const title = 'Información adicional acerca del resultado';
+    const confidentiality =
+      'Información estrictamente confidencial para conocimiento único del Hospital';
+
+    doc.addPage();
+    let y = getBodyStartY();
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .fillColor(BRAND_COLOR)
+      .text(title, contentX, y, { width: contentWidth, align: 'center' });
+    y = doc.y + 8;
+
+    doc
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor('#4b5563')
+      .text(confidentiality, contentX, y, {
+        width: contentWidth,
+        align: 'center',
+      });
+    y = doc.y + 16;
+
+    const blocks = parseInformeExtendidoMarkdown(markdown);
+    for (const block of blocks) {
+      if (block.type === 'heading') {
+        const fontSize = block.level === 1 ? 14 : block.level === 2 ? 12 : 11;
+        y = this.drawMarkdownSpans(doc, block.spans, {
+          x: contentX,
+          y,
+          width: contentWidth,
+          bottom,
+          fontSize,
+          color: BRAND_COLOR,
+          forceBold: true,
+          gapAfter: 8,
+          getBodyStartY,
+        });
+        continue;
+      }
+
+      if (block.type === 'bullet') {
+        y = this.drawMarkdownSpans(doc, block.spans, {
+          x: contentX,
+          y,
+          width: contentWidth,
+          bottom,
+          fontSize: 11,
+          color: '#000000',
+          prefix: '• ',
+          gapAfter: 4,
+          getBodyStartY,
+        });
+        continue;
+      }
+
+      y = this.drawMarkdownSpans(doc, block.spans, {
+        x: contentX,
+        y,
+        width: contentWidth,
+        bottom,
+        fontSize: 11,
+        color: '#000000',
+        gapAfter: 8,
+        getBodyStartY,
+      });
+    }
+  }
+
+  private drawMarkdownSpans(
+    doc: InstanceType<typeof PDFDocument>,
+    spans: InformeMarkdownSpan[],
+    options: {
+      x: number;
+      y: number;
+      width: number;
+      bottom: number;
+      fontSize: number;
+      color: string;
+      gapAfter: number;
+      getBodyStartY: () => number;
+      prefix?: string;
+      forceBold?: boolean;
+    },
+  ): number {
+    const {
+      x,
+      width,
+      bottom,
+      fontSize,
+      color,
+      gapAfter,
+      getBodyStartY,
+      prefix = '',
+      forceBold = false,
+    } = options;
+    const lineHeight = fontSize + 4;
+    let lineY = options.y;
+
+    const tokens = spans.flatMap((span) =>
+      span.text.split(/(\s+)/).filter((part) => part.length > 0).map((text) => ({
+        text,
+        bold: forceBold || span.bold,
+        italic: span.italic,
+      })),
+    );
+    if (tokens.length === 0) {
+      return lineY + gapAfter;
+    }
+
+    const prefixWidth = prefix
+      ? doc.font('Helvetica').fontSize(fontSize).widthOfString(prefix)
+      : 0;
+    let cursorX = x;
+    let lineStarted = false;
+    let drewPrefix = false;
+
+    const breakLine = () => {
+      lineY += lineHeight;
+      cursorX = x + prefixWidth;
+      lineStarted = false;
+      if (lineY + lineHeight > bottom) {
+        doc.addPage();
+        lineY = getBodyStartY();
+        cursorX = x + prefixWidth;
+      }
+    };
+
+    if (lineY + lineHeight > bottom) {
+      doc.addPage();
+      lineY = getBodyStartY();
+    }
+
+    for (const token of tokens) {
+      if (/^\s+$/.test(token.text)) {
+        if (!lineStarted) continue;
+        const spaceWidth = doc
+          .font(this.markdownFont(token.bold, token.italic))
+          .fontSize(fontSize)
+          .widthOfString(' ');
+        if (cursorX + spaceWidth > x + width) {
+          breakLine();
+        } else {
+          cursorX += spaceWidth;
+        }
+        continue;
+      }
+
+      doc.font(this.markdownFont(token.bold, token.italic)).fontSize(fontSize);
+      const tokenWidth = doc.widthOfString(token.text);
+      const indent = lineStarted ? 0 : prefixWidth;
+      if (lineStarted && cursorX + tokenWidth > x + width) {
+        breakLine();
+      }
+
+      if (!lineStarted && prefix && !drewPrefix) {
+        doc
+          .font('Helvetica')
+          .fontSize(fontSize)
+          .fillColor(color)
+          .text(prefix, x, lineY, { lineBreak: false });
+        cursorX = x + prefixWidth;
+        drewPrefix = true;
+      } else if (!lineStarted) {
+        cursorX = x + indent;
+      }
+
+      doc
+        .font(this.markdownFont(token.bold, token.italic))
+        .fontSize(fontSize)
+        .fillColor(color)
+        .text(token.text, cursorX, lineY, { lineBreak: false });
+      cursorX += tokenWidth;
+      lineStarted = true;
+    }
+
+    return lineY + lineHeight + gapAfter;
+  }
+
+  private markdownFont(bold: boolean, italic: boolean): string {
+    if (bold && italic) return 'Helvetica-BoldOblique';
+    if (bold) return 'Helvetica-Bold';
+    if (italic) return 'Helvetica-Oblique';
+    return 'Helvetica';
   }
 
   private async fetchImageBuffer(

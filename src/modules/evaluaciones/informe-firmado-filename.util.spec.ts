@@ -1,5 +1,6 @@
 import {
   buildInformeDriveFilename,
+  buildInformeExtendidoFilename,
   buildInformeFirmadoFilename,
   buildInformeFirmadoS3Key,
   resolveVeredictoInicial,
@@ -49,6 +50,19 @@ describe('informe-firmado-filename.util', () => {
       expect(
         buildInformeFirmadoFilename('PEGJ880527HDFRRL09', 'no_aceptado', 'No Aceptado'),
       ).toBe('PEGJ880527HDFRRL09_1_N_25_2027.pdf');
+    });
+  });
+
+  describe('buildInformeExtendidoFilename', () => {
+    it('agrega el sufijo extendido con timestamp UTC', () => {
+      expect(
+        buildInformeExtendidoFilename(
+          'PEGJ880527HDFRRL09',
+          'aceptado',
+          'Aceptado',
+          new Date('2026-09-26T20:15:00.000Z'),
+        ),
+      ).toBe('PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf');
     });
   });
 

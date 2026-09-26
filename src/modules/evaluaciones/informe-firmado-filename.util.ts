@@ -42,6 +42,33 @@ export function resolveVeredictoInicial(
     : 'A';
 }
 
+/** UTC `yyyyMMddTHHmmss` for the extended signed-informe filename. */
+export function formatInformeExtendidoTimestamp(at: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return (
+    `${at.getUTCFullYear()}${pad(at.getUTCMonth() + 1)}${pad(at.getUTCDate())}` +
+    `T${pad(at.getUTCHours())}${pad(at.getUTCMinutes())}${pad(at.getUTCSeconds())}`
+  );
+}
+
+/**
+ * Rebuilt signed informe, distinct from the original key:
+ * `{CURP}_1_{A|N}_25_2027_extendido_{yyyyMMddTHHmmss}.pdf`
+ */
+export function buildInformeExtendidoFilename(
+  documento: string | null | undefined,
+  veredictoCodigo: string | null | undefined,
+  veredictoEtiqueta: string | null | undefined,
+  at: Date,
+): string {
+  const base = buildInformeFirmadoFilename(
+    documento,
+    veredictoCodigo,
+    veredictoEtiqueta,
+  ).replace(/\.pdf$/, '');
+  return `${base}_extendido_${formatInformeExtendidoTimestamp(at)}.pdf`;
+}
+
 /**
  * Signed informe S3 filename:
  * `{CURP}_1_{veredicto_inicial}_25_2027.pdf`

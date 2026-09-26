@@ -92,6 +92,7 @@ psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/021_aspirant
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/023_usuarios_administrativos_supervisor.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/024_aspirantes_google_drive.sql
 psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/025_google_drive_oauth.sql
+psql -h $DB_HOST -U $DB_USERNAME -d $DB_NAME -f database/migrations/026_aspirante_evaluaciones_informe_extendido.sql
 ```
 
 ### Ventana de acceso por hospital (tenant)

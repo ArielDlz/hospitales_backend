@@ -30,6 +30,9 @@ import {
   ConfirmarEvaluacionResponseDto,
 } from './dto/aspirante-evaluacion-response.dto';
 import { FirmarInformeResponseDto } from './dto/firmar-informe-response.dto';
+import { InformeExtendidoDto } from './dto/informe-extendido.dto';
+import { InformeExtendidoResponseDto } from './dto/informe-extendido-response.dto';
+import { SuperuserGuard } from '../auth/guards/superuser.guard';
 import { AsignarEvaluacionResponseDto } from './dto/asignar-evaluacion-response.dto';
 import { EnviarInformeAlHospitalResponseDto } from './dto/enviar-informe-al-hospital-response.dto';
 import { buildContentDispositionAttachment } from './informe-firmado-filename.util';
@@ -151,6 +154,32 @@ export class EvaluacionesController {
     @CurrentUser() user: JwtPayloadAdmin,
   ): Promise<FirmarInformeResponseDto> {
     return this.evaluacionesService.firmarInforme(aspiranteId, user);
+  }
+
+  @Post('aspirantes/:aspiranteId/informe/extendido')
+  @UseGuards(SuperuserGuard)
+  @ApiOperation({
+    summary:
+      'Guardar markdown de informe extendido y regenerar el PDF firmado (solo superusuario, informe ya firmado)',
+  })
+  @ApiCreatedResponse({ type: InformeExtendidoResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'El informe aún no está firmado o el hospital no tiene slug',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'No es superusuario, o el evaluador y su supervisor no tienen firma',
+  })
+  async guardarInformeExtendido(
+    @Param('aspiranteId', ParseUUIDPipe) aspiranteId: string,
+    @Body() dto: InformeExtendidoDto,
+  ): Promise<InformeExtendidoResponseDto> {
+    return this.evaluacionesService.guardarInformeExtendido(
+      aspiranteId,
+      dto.informeExtendido,
+    );
   }
 
   @Post('aspirantes/:aspiranteId/informe/enviar-al-hospital')

@@ -235,4 +235,36 @@ describe('InformePdfService', () => {
     ).length;
     expect(pageCount).toBeGreaterThanOrEqual(2);
   });
+
+  it('agrega páginas extra con el informe extendido y no las suma al conteo principal', async () => {
+    const base = {
+      nombre: 'Juan',
+      apellidos: 'García',
+      registroHospital: '251156',
+      especialidad: 'Cardiología',
+      genero: 'Hombre',
+      fechaNacimiento: '1988-05-27',
+      emailEvaluador: 'evaluador@hospital.com',
+      comentario: 'Informe breve.',
+      veredictoEtiqueta: 'Aceptado',
+      veredictoCodigo: 'aceptado',
+      fechaInforme: new Date(2026, 8, 26),
+      firmaUrl: 'https://example.com/firma.png',
+      nombreFirmante: 'Dr. Firmante',
+      cedulaProfesional: '6824419',
+    };
+
+    const without = await service.buildPdf(base);
+    const withExtra = await service.buildPdf({
+      ...base,
+      informeExtendido:
+        '# Anexo\n\nTexto **adicional** del hospital.\n\n- Seguimiento',
+    });
+
+    const countPages = (buffer: Buffer) =>
+      (buffer.toString('latin1').match(/\/Type\s*\/Page(?!s)\b/g) ?? []).length;
+
+    expect(countPages(withExtra)).toBeGreaterThan(countPages(without));
+    expect(withExtra.subarray(0, 4).toString()).toBe('%PDF');
+  });
 });
