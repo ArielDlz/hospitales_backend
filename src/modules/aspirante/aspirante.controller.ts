@@ -86,7 +86,7 @@ export class AspiranteController {
   })
   @ApiOkResponse({
     description:
-      'Array de aspirantes (sin password ni token de primer acceso). Incluye nombreCompleto, hospitalNombre, evaluationFlowDescripcion, evaluationFlowOrderId y canEvaluar para tablas de evaluador.',
+      'Array de aspirantes (sin password ni token de primer acceso). Incluye nombreCompleto, hospitalNombre, evaluationFlowDescripcion, evaluationFlowOrderId, canEvaluar y veredicto (null si el informe aún no tiene veredicto) para tablas de evaluador.',
     type: AspiranteResponseDto,
     isArray: true,
   })

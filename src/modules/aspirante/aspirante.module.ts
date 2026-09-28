@@ -15,6 +15,7 @@ import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuari
 import { Payment } from '../payments/entities/payment.entity';
 import { PaymentsModule } from '../payments/payments.module';
 import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
+import { Veredicto } from '../evaluaciones/entities/veredicto.entity';
 import { SuperuserGuard } from '../auth/guards/superuser.guard';
 
 @Module({
@@ -28,6 +29,7 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
       UsuarioAdministrativo,
       Payment,
       AspiranteEvaluacion,
+      Veredicto,
     ]),
     forwardRef(() => HospitalModule),
     forwardRef(() => PaymentsModule),
