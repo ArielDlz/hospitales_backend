@@ -25,6 +25,7 @@ import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuari
 import { Payment } from '../payments/entities/payment.entity';
 import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
 import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
+import { Veredicto } from '../evaluaciones/entities/veredicto.entity';
 import { EvaluationFlowService } from './evaluation-flow.service';
 import { buildEnviarAlHospitalFlags } from '../google-drive/enviar-al-hospital.flags';
 import { parseEnabledTenantIds } from '../google-drive/google-drive-tenants';
@@ -32,6 +33,11 @@ type AspirantePublic = Omit<
   Aspirante,
   'passwordHash' | 'primerAccesoToken' | 'evaluationFlowStep'
 >;
+type VeredictoListItem = {
+  idVeredicto: number;
+  codigo: string;
+  etiqueta: string;
+};
 type AspiranteWithHospitalName = AspirantePublic & {
   hospitalNombre: string | null;
   evaluationFlowDescripcion: string | null;
@@ -41,6 +47,7 @@ type AspiranteWithHospitalName = AspirantePublic & {
   evaluadorAsignadoEmail: string | null;
   canEnviarAlHospital: boolean;
   enviadoAlHospital: boolean;
+  veredicto: VeredictoListItem | null;
 };
 
 @Injectable()
@@ -54,6 +61,10 @@ export class AspiranteService {
     private readonly evaluationFlowStepRepository: Repository<EvaluationFlowStep>,
     @InjectRepository(UsuarioAdministrativo)
     private readonly usuarioRepository: Repository<UsuarioAdministrativo>,
+    @InjectRepository(AspiranteEvaluacion)
+    private readonly aspiranteEvaluacionRepository: Repository<AspiranteEvaluacion>,
+    @InjectRepository(Veredicto)
+    private readonly veredictoRepository: Repository<Veredicto>,
     private readonly hospitalService: HospitalService,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
@@ -424,6 +435,7 @@ export class AspiranteService {
     });
 
     const evaluadorEmailById = await this.loadEvaluadorEmailsById(rows);
+    const veredictoByAspiranteId = await this.loadVeredictoByAspiranteId(rows);
 
     return rows.map((row) =>
       this.toPublicListItem(
@@ -433,6 +445,7 @@ export class AspiranteService {
           ? (evaluadorEmailById.get(row.idEvaluadorAsignado) ?? null)
           : null,
         user,
+        veredictoByAspiranteId.get(row.id) ?? null,
       ),
     );
   }
@@ -510,6 +523,7 @@ export class AspiranteService {
     }
 
     const evaluadorEmailById = await this.loadEvaluadorEmailsById(rows);
+    const veredictoByAspiranteId = await this.loadVeredictoByAspiranteId(rows);
 
     return rows.map((row) =>
       this.toPublicListItem(
@@ -519,6 +533,7 @@ export class AspiranteService {
           ? (evaluadorEmailById.get(row.idEvaluadorAsignado) ?? null)
           : null,
         user,
+        veredictoByAspiranteId.get(row.id) ?? null,
       ),
     );
   }
@@ -543,11 +558,54 @@ export class AspiranteService {
     return new Map(usuarios.map((u) => [u.id, u.email]));
   }
 
+  private async loadVeredictoByAspiranteId(
+    rows: Aspirante[],
+  ): Promise<Map<string, VeredictoListItem>> {
+    const aspiranteIds = [...new Set(rows.map((row) => row.id))];
+    if (aspiranteIds.length === 0) {
+      return new Map();
+    }
+
+    const evaluaciones = await this.aspiranteEvaluacionRepository.find({
+      where: { idAspirante: In(aspiranteIds) },
+      select: ['idAspirante', 'idVeredicto'],
+    });
+    const veredictoIds = [
+      ...new Set(evaluaciones.map((evaluacion) => evaluacion.idVeredicto)),
+    ];
+    if (veredictoIds.length === 0) {
+      return new Map();
+    }
+
+    const veredictos = await this.veredictoRepository.find({
+      where: { idVeredicto: In(veredictoIds) },
+      select: ['idVeredicto', 'codigo', 'etiqueta'],
+    });
+    const veredictoById = new Map(
+      veredictos.map((veredicto) => [veredicto.idVeredicto, veredicto]),
+    );
+
+    const result = new Map<string, VeredictoListItem>();
+    for (const evaluacion of evaluaciones) {
+      const veredicto = veredictoById.get(evaluacion.idVeredicto);
+      if (!veredicto) {
+        continue;
+      }
+      result.set(evaluacion.idAspirante, {
+        idVeredicto: veredicto.idVeredicto,
+        codigo: veredicto.codigo,
+        etiqueta: veredicto.etiqueta,
+      });
+    }
+    return result;
+  }
+
   private toPublicListItem(
     row: Aspirante,
     hospitalNombre: string | null,
     evaluadorAsignadoEmail: string | null,
     user: JwtPayloadAdmin,
+    veredicto: VeredictoListItem | null,
   ): AspiranteWithHospitalName {
     const { passwordHash: _, primerAccesoToken: __, evaluationFlowStep, ...rest } = row;
     const evaluationFlowOrderId = evaluationFlowStep?.orderId ?? null;
@@ -559,6 +617,7 @@ export class AspiranteService {
       nombreCompleto: `${row.nombre} ${row.apellidos}`.trim(),
       canEvaluar: evaluationFlowOrderId === 5 || evaluationFlowOrderId === 6,
       evaluadorAsignadoEmail,
+      veredicto,
       ...buildEnviarAlHospitalFlags(
         row,
         user.rol,

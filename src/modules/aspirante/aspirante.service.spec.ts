@@ -15,6 +15,8 @@ import { EvaluationFlowService } from './evaluation-flow.service';
 import { HospitalService } from '../hospital/hospital.service';
 import { MailService } from '../mail/mail.service';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
+import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
+import { Veredicto } from '../evaluaciones/entities/veredicto.entity';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import type { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 
@@ -37,6 +39,12 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     sendRecordatorioPaso2Email: jest.fn(),
   };
   const usuarioRepo = {
+    find: jest.fn().mockResolvedValue([]),
+  };
+  const aspiranteEvaluacionRepo = {
+    find: jest.fn().mockResolvedValue([]),
+  };
+  const veredictoRepo = {
     find: jest.fn().mockResolvedValue([]),
   };
   const configService = {
@@ -63,6 +71,8 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     aspiranteRepo.save.mockImplementation(async (row) => row);
+    aspiranteEvaluacionRepo.find.mockResolvedValue([]);
+    veredictoRepo.find.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -75,6 +85,14 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
         {
           provide: getRepositoryToken(UsuarioAdministrativo),
           useValue: usuarioRepo,
+        },
+        {
+          provide: getRepositoryToken(AspiranteEvaluacion),
+          useValue: aspiranteEvaluacionRepo,
+        },
+        {
+          provide: getRepositoryToken(Veredicto),
+          useValue: veredictoRepo,
         },
         { provide: HospitalService, useValue: hospitalService },
         { provide: MailService, useValue: mailService },
@@ -409,6 +427,103 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     expect(item.canEnviarAlHospital).toBe(true);
     expect(item.enviadoAlHospital).toBe(false);
     expect(item.nombreCompleto).toBe('Juan García');
+    expect(item.veredicto).toBeNull();
+  });
+
+  it('findAll devuelve veredicto null si el informe aún no tiene veredicto', async () => {
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      nombre: 'Hospital General',
+    });
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        nombre: 'Juan',
+        apellidos: 'García',
+        passwordHash: 'x',
+        primerAccesoToken: null,
+        veredictoInforme: null,
+        idEvaluadorAsignado: null,
+        evaluationFlowStep: { orderId: 5, descripcion: 'En evaluación' },
+      },
+    ]);
+    aspiranteEvaluacionRepo.find.mockResolvedValue([]);
+
+    const [item] = await service.findAll(tenantId, undefined, false, adminUser);
+
+    expect(item.veredicto).toBeNull();
+    expect(veredictoRepo.find).not.toHaveBeenCalled();
+  });
+
+  it('findAll devuelve el veredicto del informe aunque el PDF aún no esté firmado', async () => {
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      nombre: 'Hospital General',
+    });
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        nombre: 'Juan',
+        apellidos: 'García',
+        passwordHash: 'x',
+        primerAccesoToken: null,
+        veredictoInforme: null,
+        idEvaluadorAsignado: null,
+        evaluationFlowStep: { orderId: 6, descripcion: 'Informe' },
+      },
+    ]);
+    aspiranteEvaluacionRepo.find.mockResolvedValue([
+      { idAspirante: 'asp-1', idVeredicto: 1 },
+    ]);
+    veredictoRepo.find.mockResolvedValue([
+      { idVeredicto: 1, codigo: 'aceptado', etiqueta: 'Aceptado' },
+    ]);
+
+    const [item] = await service.findAll(tenantId, undefined, false, adminUser);
+
+    expect(item.veredictoInforme).toBeNull();
+    expect(item.veredicto).toEqual({
+      idVeredicto: 1,
+      codigo: 'aceptado',
+      etiqueta: 'Aceptado',
+    });
+  });
+
+  it('findAll devuelve el veredicto del informe ya firmado', async () => {
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      nombre: 'Hospital General',
+    });
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        nombre: 'Juan',
+        apellidos: 'García',
+        passwordHash: 'x',
+        primerAccesoToken: null,
+        veredictoInforme: 'https://s3.example/informe.pdf',
+        idEvaluadorAsignado: null,
+        evaluationFlowStep: { orderId: 10, descripcion: 'Informe firmado' },
+      },
+    ]);
+    aspiranteEvaluacionRepo.find.mockResolvedValue([
+      { idAspirante: 'asp-1', idVeredicto: 2 },
+    ]);
+    veredictoRepo.find.mockResolvedValue([
+      { idVeredicto: 2, codigo: 'no_aceptado', etiqueta: 'No aceptado' },
+    ]);
+
+    const [item] = await service.findAll(tenantId, undefined, false, adminUser);
+
+    expect(item.veredictoInforme).toBe('https://s3.example/informe.pdf');
+    expect(item.veredicto).toEqual({
+      idVeredicto: 2,
+      codigo: 'no_aceptado',
+      etiqueta: 'No aceptado',
+    });
   });
 
   it('findClaimedPayments lista reclamaciones pendientes ordenadas por claimed_at', async () => {

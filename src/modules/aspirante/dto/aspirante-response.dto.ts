@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { VeredictoResponseDto } from '../../evaluaciones/dto/veredicto-response.dto';
 
 /** Campos que expone la API (sin password ni token de primer acceso). Incluye fecha de caducidad del enlace. */
 export class AspiranteResponseDto {
@@ -136,6 +137,14 @@ export class AspiranteResponseDto {
     description: 'URL del informe PDF firmado en S3, o null si aún no se firmó',
   })
   veredictoInforme?: string | null;
+
+  @ApiPropertyOptional({
+    type: VeredictoResponseDto,
+    nullable: true,
+    description:
+      'Veredicto del informe (catálogo). Null si aún no hay informe con veredicto. Independiente de veredictoInforme (URL del PDF firmado).',
+  })
+  veredicto?: VeredictoResponseDto | null;
 
   @ApiPropertyOptional({
     example: true,
