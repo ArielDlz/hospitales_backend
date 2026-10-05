@@ -11,7 +11,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { FindOptionsWhere, IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Aspirante } from '../aspirante/aspirante.entity';
@@ -176,22 +176,13 @@ export class AuthService {
       throw new UnauthorizedException(CREDENTIALS_ERROR);
     }
 
-    const aspirante = await this.aspiranteRepository.findOne({
-      where: {
-        tenantId: hospital.uuid,
-        email: dto.email.toLowerCase(),
-        registroHospital: dto.registroHospital,
-        active: true,
-      },
-      relations: ['evaluationFlowStep'],
-    });
-
-    const passwordToCheck = aspirante?.passwordHash ?? DUMMY_HASH;
-    const isValid = await bcrypt.compare(dto.password, passwordToCheck);
-
-    if (!aspirante || !isValid) {
-      throw new UnauthorizedException(CREDENTIALS_ERROR);
-    }
+    const aspirante = await this.resolveAspiranteForLogin(
+      hospital.uuid,
+      dto.email,
+      dto.registroHospital,
+      dto.password,
+      dto.rondaEtiqueta,
+    );
 
     if (!aspirante.evaluationFlowStep) {
       throw new InternalServerErrorException(
@@ -248,6 +239,75 @@ export class AuthService {
     return { accessToken, expiresIn };
   }
 
+  private async resolveAspiranteForLogin(
+    tenantId: string,
+    email: string,
+    registroHospital: string,
+    password: string,
+    rondaEtiqueta?: string,
+  ): Promise<Aspirante> {
+    const candidates = await this.findAspirantesByIdentidad({
+      tenantId,
+      email,
+      registroHospital,
+      active: true,
+      rondaEtiqueta,
+    });
+
+    if (candidates.length === 0) {
+      await bcrypt.compare(password, DUMMY_HASH);
+      throw new UnauthorizedException(CREDENTIALS_ERROR);
+    }
+
+    const passwordMatches: Aspirante[] = [];
+    for (const candidate of candidates) {
+      if (await bcrypt.compare(password, candidate.passwordHash)) {
+        passwordMatches.push(candidate);
+      }
+    }
+
+    if (passwordMatches.length === 1) {
+      return passwordMatches[0];
+    }
+
+    throw new UnauthorizedException(
+      passwordMatches.length > 1
+        ? 'Hay más de una cuenta activa con estos datos. Indica la ronda de evaluación.'
+        : CREDENTIALS_ERROR,
+    );
+  }
+
+  private async findAspirantesByIdentidad(params: {
+    tenantId: string;
+    email: string;
+    registroHospital: string;
+    active?: boolean;
+    rondaEtiqueta?: string;
+  }): Promise<Aspirante[]> {
+    const where: FindOptionsWhere<Aspirante> = {
+      tenantId: params.tenantId,
+      email: params.email.toLowerCase(),
+      registroHospital: params.registroHospital,
+    };
+    if (params.active != null) {
+      where.active = params.active;
+    }
+
+    const rows = await this.aspiranteRepository.find({
+      where,
+      relations: ['evaluationFlowStep', 'rondaEvaluacion'],
+    });
+
+    const etiqueta = params.rondaEtiqueta?.trim().toLowerCase();
+    if (!etiqueta) {
+      return rows;
+    }
+
+    return rows.filter(
+      (row) => row.rondaEvaluacion?.etiqueta.trim().toLowerCase() === etiqueta,
+    );
+  }
+
   private async resolveRondaEtiqueta(
     rondaEvaluacionId: string | null,
   ): Promise<string | null> {
@@ -278,13 +338,22 @@ export class AuthService {
       };
     }
 
-    const aspirante = await this.aspiranteRepository.findOne({
-      where: {
-        tenantId: hospital.uuid,
-        email,
-        registroHospital,
-      },
+    const matches = await this.findAspirantesByIdentidad({
+      tenantId: hospital.uuid,
+      email,
+      registroHospital,
+      rondaEtiqueta: dto.rondaEtiqueta,
     });
+
+    if (matches.length > 1) {
+      return {
+        estado: SolicitarActivacionEstado.RondaRequerida,
+        mensaje:
+          'Hay más de una cuenta con estos datos. Indica la ronda de evaluación.',
+      };
+    }
+
+    const aspirante = matches[0];
 
     if (!aspirante) {
       return {

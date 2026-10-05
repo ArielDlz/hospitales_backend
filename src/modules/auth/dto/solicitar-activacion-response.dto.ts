@@ -4,6 +4,7 @@ export enum SolicitarActivacionEstado {
   YaActivo = 'ya_activo',
   ActivacionEnviada = 'activacion_enviada',
   NoEncontrado = 'no_encontrado',
+  RondaRequerida = 'ronda_requerida',
 }
 
 export class SolicitarActivacionResponseDto {
