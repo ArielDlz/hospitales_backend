@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import { AspiranteImportService } from './aspirante-import.service';
 import { Aspirante } from '../aspirante.entity';
 import { EvaluationFlowStep } from '../evaluation-flow-step.entity';
+import { Ronda } from '../ronda.entity';
 import { HospitalService } from '../../hospital/hospital.service';
 import { MailService } from '../../mail/mail.service';
 import { ASPIRANTE_IMPORT_HEADERS } from './aspirante-import.constants';
@@ -22,8 +23,17 @@ describe('AspiranteImportService', () => {
     envioCorreoRegistro: false,
   };
 
+  const existingRonda = {
+    id: 'ronda-existing',
+    etiqueta: 'Ronda 2026',
+    tenantId: hospital.uuid,
+  };
+
   const aspiranteRepo = {
     find: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  };
+  const rondaRepo = {
     createQueryBuilder: jest.fn(),
   };
   const flowStepRepo = {
@@ -42,6 +52,18 @@ describe('AspiranteImportService', () => {
   const dataSource = {
     transaction: jest.fn(),
   };
+
+  function mockRondaLookup(
+    ronda: { id: string; etiqueta: string } | null,
+  ) {
+    const qb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(ronda),
+    };
+    rondaRepo.createQueryBuilder.mockReturnValue(qb);
+    return qb;
+  }
 
   function mockExistingAspirantes(
     rows: Array<{ email: string; registroHospital: string }>,
@@ -82,11 +104,48 @@ describe('AspiranteImportService', () => {
     email: 'juan@example.com',
     rfc: 'RFC',
     telefono: '551111',
+    ronda_evaluacion: 'Ronda 2026',
   };
+
+  function mockImportTransaction(existingRondaInTx: { id: string } | null = null) {
+    const saved: Array<Record<string, unknown>> = [];
+    const rondaSaves: Array<Record<string, unknown>> = [];
+    dataSource.transaction.mockImplementation(
+      async (cb: (m: unknown) => Promise<void>) => {
+        const aspiranteTx = {
+          create: jest.fn((data: Record<string, unknown>) => data),
+          save: jest.fn(async (entity: Record<string, unknown>) => {
+            const withId = { ...entity, id: `id-${saved.length}` };
+            saved.push(withId);
+            return withId;
+          }),
+        };
+        const rondaTx = {
+          createQueryBuilder: jest.fn(() => ({
+            where: jest.fn().mockReturnThis(),
+            andWhere: jest.fn().mockReturnThis(),
+            getOne: jest.fn().mockResolvedValue(existingRondaInTx),
+          })),
+          create: jest.fn((data: Record<string, unknown>) => data),
+          save: jest.fn(async (entity: Record<string, unknown>) => {
+            const withId = { ...entity, id: 'ronda-new' };
+            rondaSaves.push(withId);
+            return withId;
+          }),
+        };
+        await cb({
+          getRepository: (entity: unknown) =>
+            entity === Ronda ? rondaTx : aspiranteTx,
+        });
+      },
+    );
+    return { saved, rondaSaves };
+  }
 
   beforeEach(async () => {
     jest.clearAllMocks();
     hospitalService.findByUuid.mockResolvedValue(hospital);
+    mockRondaLookup(null);
     mockExistingAspirantes([]);
     flowStepRepo.findOne.mockResolvedValue({ id: 1, orderId: 1 });
 
@@ -94,6 +153,7 @@ describe('AspiranteImportService', () => {
       providers: [
         AspiranteImportService,
         { provide: getRepositoryToken(Aspirante), useValue: aspiranteRepo },
+        { provide: getRepositoryToken(Ronda), useValue: rondaRepo },
         {
           provide: getRepositoryToken(EvaluationFlowStep),
           useValue: flowStepRepo,
@@ -135,17 +195,23 @@ describe('AspiranteImportService', () => {
     ).toBe(true);
   });
 
-  it('validate reports DB duplicates', async () => {
-    mockExistingAspirantes([
+  it('validate reports DB duplicates inside the same ronda', async () => {
+    mockRondaLookup(existingRonda);
+    const aspiranteQuery = mockExistingAspirantes([
       { email: 'juan@example.com', registroHospital: 'REG-1' },
     ]);
     const buffer = await buildWorkbook([baseRow]);
     const report = await service.validate(buffer, hospital.uuid);
     expect(report.ok).toBe(false);
     expect(report.errors[0].messages[0]).toContain('Ya existe un aspirante');
+    expect(aspiranteQuery.andWhere).toHaveBeenCalledWith(
+      'a.ronda_evaluacion_id = :rondaId',
+      { rondaId: existingRonda.id },
+    );
   });
 
   it('validate detects DB duplicates case-insensitively', async () => {
+    mockRondaLookup(existingRonda);
     mockExistingAspirantes([
       { email: 'Juan@Example.com', registroHospital: 'REG-1' },
     ]);
@@ -178,19 +244,63 @@ describe('AspiranteImportService', () => {
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
+  it('validate rejects a missing ronda_evaluacion', async () => {
+    const buffer = await buildWorkbook([{ ...baseRow, ronda_evaluacion: '' }]);
+    const report = await service.validate(buffer, hospital.uuid);
+    expect(report.ok).toBe(false);
+    expect(report.errors[0].messages).toContain('ronda_evaluacion es requerido');
+  });
+
+  it('validate rejects mixed ronda_evaluacion values', async () => {
+    const buffer = await buildWorkbook([
+      baseRow,
+      {
+        ...baseRow,
+        email: 'ana@example.com',
+        registro_hospital: 'REG-2',
+        ronda_evaluacion: 'Otra ronda',
+      },
+    ]);
+    const report = await service.validate(buffer, hospital.uuid);
+    expect(report.ok).toBe(false);
+    const mismatched = report.errors.find((e) => e.rowNumber === 3);
+    expect(mismatched?.messages).toContain(
+      'todas las filas deben tener la misma ronda_evaluacion',
+    );
+    expect(
+      report.errors
+        .find((e) => e.rowNumber === 2)
+        ?.messages.some((m) => m.includes('misma ronda_evaluacion')),
+    ).toBeFalsy();
+  });
+
+  it('validate accepts the same etiqueta with different casing', async () => {
+    const buffer = await buildWorkbook([
+      baseRow,
+      {
+        ...baseRow,
+        email: 'ana@example.com',
+        registro_hospital: 'REG-2',
+        ronda_evaluacion: 'ronda 2026',
+      },
+    ]);
+    const report = await service.validate(buffer, hospital.uuid);
+    expect(report.ok).toBe(true);
+  });
+
+  it('validate skips DB duplicates when the ronda does not exist yet', async () => {
+    mockRondaLookup(null);
+    mockExistingAspirantes([
+      { email: 'juan@example.com', registroHospital: 'REG-1' },
+    ]);
+    const buffer = await buildWorkbook([baseRow]);
+    const report = await service.validate(buffer, hospital.uuid);
+    expect(report.ok).toBe(true);
+    expect(aspiranteRepo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
   it('import creates all rows in a transaction when valid', async () => {
-    const saved: unknown[] = [];
-    dataSource.transaction.mockImplementation(async (cb: (m: unknown) => Promise<void>) => {
-      const repo = {
-        create: jest.fn((data: Record<string, unknown>) => data),
-        save: jest.fn(async (entity: Record<string, unknown>) => {
-          const withId = { ...entity, id: `id-${saved.length}` };
-          saved.push(withId);
-          return withId;
-        }),
-      };
-      await cb({ getRepository: () => repo });
-    });
+    const { saved } = mockImportTransaction(null);
 
     const buffer = await buildWorkbook([
       baseRow,
@@ -206,19 +316,33 @@ describe('AspiranteImportService', () => {
     expect(mailService.sendPrimerAccesoEmail).not.toHaveBeenCalled();
   });
 
+  it('import creates a ronda when the etiqueta does not exist', async () => {
+    const { saved, rondaSaves } = mockImportTransaction(null);
+    const buffer = await buildWorkbook([baseRow]);
+    const report = await service.import(buffer, hospital.uuid);
+    expect(report.ok).toBe(true);
+    expect(rondaSaves).toEqual([
+      expect.objectContaining({
+        id: 'ronda-new',
+        tenantId: hospital.uuid,
+        etiqueta: 'Ronda 2026',
+      }),
+    ]);
+    expect(saved[0].rondaEvaluacionId).toBe('ronda-new');
+  });
+
+  it('import reuses an existing ronda', async () => {
+    mockRondaLookup(existingRonda);
+    const { saved, rondaSaves } = mockImportTransaction(existingRonda);
+    const buffer = await buildWorkbook([baseRow]);
+    const report = await service.import(buffer, hospital.uuid);
+    expect(report.ok).toBe(true);
+    expect(rondaSaves).toHaveLength(0);
+    expect(saved[0].rondaEvaluacionId).toBe(existingRonda.id);
+  });
+
   it('import lowercases emails before saving', async () => {
-    const saved: unknown[] = [];
-    dataSource.transaction.mockImplementation(async (cb: (m: unknown) => Promise<void>) => {
-      const repo = {
-        create: jest.fn((data: Record<string, unknown>) => data),
-        save: jest.fn(async (entity: Record<string, unknown>) => {
-          const withId = { ...entity, id: `id-${saved.length}` };
-          saved.push(withId);
-          return withId;
-        }),
-      };
-      await cb({ getRepository: () => repo });
-    });
+    const { saved } = mockImportTransaction(null);
 
     const buffer = await buildWorkbook([
       { ...baseRow, email: 'Juan.Perez@Example.COM' },
@@ -233,16 +357,7 @@ describe('AspiranteImportService', () => {
       ...hospital,
       envioCorreoRegistro: true,
     });
-    dataSource.transaction.mockImplementation(async (cb: (m: unknown) => Promise<void>) => {
-      const repo = {
-        create: jest.fn((data: Record<string, unknown>) => data),
-        save: jest.fn(async (entity: Record<string, unknown>) => ({
-          ...entity,
-          id: 'asp-1',
-        })),
-      };
-      await cb({ getRepository: () => repo });
-    });
+    mockImportTransaction(null);
     mailService.sendPrimerAccesoEmail.mockResolvedValue(undefined);
 
     const buffer = await buildWorkbook([baseRow]);

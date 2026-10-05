@@ -13,6 +13,7 @@ import { TenantScopeGuard } from './guards/tenant-scope.guard';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Aspirante } from '../aspirante/aspirante.entity';
+import { Ronda } from '../aspirante/ronda.entity';
 import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { Hospital } from '../hospital/hospital.entity';
 import { MailModule } from '../mail/mail.module';
@@ -24,6 +25,7 @@ import { AspiranteModule } from '../aspirante/aspirante.module';
       UsuarioAdministrativo,
       EvaluadorTenant,
       Aspirante,
+      Ronda,
       EvaluationFlowStep,
       Hospital,
     ]),

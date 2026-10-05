@@ -205,7 +205,7 @@ export class PaymentsService {
       throw new InternalServerErrorException('Hospital no encontrado');
     }
 
-    const tokenBundle = this.authService.issueAspiranteAccessToken({
+    const tokenBundle = await this.authService.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
       accesoCierraAt: hospital.accesoCierraAt,

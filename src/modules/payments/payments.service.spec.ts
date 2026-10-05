@@ -80,6 +80,7 @@ describe('PaymentsService', () => {
     evaluationFlowOrderId: 2,
     evaluationFlowDescripcion: 'Registrado',
     paymentProvider: 'stripe',
+    rondaEtiqueta: null,
   };
 
   const paymentRepo = {

@@ -14,6 +14,8 @@ export interface AspiranteImportParsedRow {
   email: string;
   rfc: string | null;
   telefono: string | null;
+  /** Etiqueta de la ronda, tal como llega en el Excel. */
+  rondaEvaluacion: string;
 }
 
 export interface AspiranteImportRowError {

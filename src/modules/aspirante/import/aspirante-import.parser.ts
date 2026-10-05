@@ -236,6 +236,7 @@ export async function parseAspiranteImportBuffer(
     const nacionalidad = cellToRawString(get('nacionalidad')) || null;
     const rfc = cellToRawString(get('rfc')) || null;
     const telefono = cellToRawString(get('telefono')) || null;
+    const rondaEvaluacion = cellToRawString(get('ronda_evaluacion'));
 
     const rawGenero = cellToRawString(get('genero'));
     const rawFechaCell = get('fecha_nacimiento');
@@ -257,6 +258,7 @@ export async function parseAspiranteImportBuffer(
       !nacionalidad &&
       !rfc &&
       !telefono &&
+      !rondaEvaluacion &&
       !rawGenero &&
       (rawFechaForNorm == null || rawFechaForNorm === '');
 
@@ -302,6 +304,7 @@ export async function parseAspiranteImportBuffer(
       email,
       rfc,
       telefono,
+      rondaEvaluacion,
     });
   }
 

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class AspiranteLoginDto {
   @ApiProperty({ example: 'hospital-general', description: 'Slug del hospital (tenant)' })
@@ -25,4 +25,13 @@ export class AspiranteLoginDto {
   @IsNotEmpty()
   @MinLength(1)
   password: string;
+
+  @ApiPropertyOptional({
+    example: 'Ronda 2026',
+    description:
+      'Etiqueta de la ronda. Obligatoria si el mismo email y registro existen en más de una ronda activa.',
+  })
+  @IsOptional()
+  @IsString()
+  rondaEtiqueta?: string;
 }

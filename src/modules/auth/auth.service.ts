@@ -11,10 +11,11 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { FindOptionsWhere, IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Aspirante } from '../aspirante/aspirante.entity';
+import { Ronda } from '../aspirante/ronda.entity';
 import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
@@ -102,6 +103,8 @@ export class AuthService {
     private readonly evaluadorTenantRepository: Repository<EvaluadorTenant>,
     @InjectRepository(Aspirante)
     private readonly aspiranteRepository: Repository<Aspirante>,
+    @InjectRepository(Ronda)
+    private readonly rondaRepository: Repository<Ronda>,
     @InjectRepository(EvaluationFlowStep)
     private readonly evaluationFlowStepRepository: Repository<EvaluationFlowStep>,
     @InjectRepository(Hospital)
@@ -173,22 +176,13 @@ export class AuthService {
       throw new UnauthorizedException(CREDENTIALS_ERROR);
     }
 
-    const aspirante = await this.aspiranteRepository.findOne({
-      where: {
-        tenantId: hospital.uuid,
-        email: dto.email.toLowerCase(),
-        registroHospital: dto.registroHospital,
-        active: true,
-      },
-      relations: ['evaluationFlowStep'],
-    });
-
-    const passwordToCheck = aspirante?.passwordHash ?? DUMMY_HASH;
-    const isValid = await bcrypt.compare(dto.password, passwordToCheck);
-
-    if (!aspirante || !isValid) {
-      throw new UnauthorizedException(CREDENTIALS_ERROR);
-    }
+    const aspirante = await this.resolveAspiranteForLogin(
+      hospital.uuid,
+      dto.email,
+      dto.registroHospital,
+      dto.password,
+      dto.rondaEtiqueta,
+    );
 
     if (!aspirante.evaluationFlowStep) {
       throw new InternalServerErrorException(
@@ -196,7 +190,7 @@ export class AuthService {
       );
     }
 
-    return this.issueAspiranteAccessToken({
+    return await this.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
       accesoCierraAt: hospital.accesoCierraAt,
@@ -209,7 +203,7 @@ export class AuthService {
    * TTL: always 1d (soft-close does not shorten sessions).
    * Reutilizar tras login, activar cuenta, avanzar/retroceder paso, etc.
    */
-  issueAspiranteAccessToken(params: {
+  async issueAspiranteAccessToken(params: {
     aspirante: Pick<
       Aspirante,
       | 'id'
@@ -218,12 +212,16 @@ export class AuthService {
       | 'nombre'
       | 'apellidos'
       | 'paymentLink'
+      | 'rondaEvaluacionId'
     >;
     hospitalSlug: string;
     accesoCierraAt: Date | null;
     flowStep: Pick<EvaluationFlowStep, 'orderId' | 'descripcion'>;
-  }): { accessToken: string; expiresIn: string } {
+  }): Promise<{ accessToken: string; expiresIn: string }> {
     const fullName = `${params.aspirante.nombre} ${params.aspirante.apellidos}`.trim();
+    const rondaEtiqueta = await this.resolveRondaEtiqueta(
+      params.aspirante.rondaEvaluacionId,
+    );
     const payload: JwtPayloadAspirante = {
       sub: params.aspirante.id,
       type: 'aspirante',
@@ -234,10 +232,93 @@ export class AuthService {
       evaluationFlowOrderId: params.flowStep.orderId,
       evaluationFlowDescripcion: params.flowStep.descripcion,
       paymentProvider: resolvePaymentProvider(params.aspirante.paymentLink),
+      rondaEtiqueta,
     };
     const expiresIn = resolveAspiranteJwtExpiresIn();
     const accessToken = this.jwtService.sign(payload, { expiresIn });
     return { accessToken, expiresIn };
+  }
+
+  private async resolveAspiranteForLogin(
+    tenantId: string,
+    email: string,
+    registroHospital: string,
+    password: string,
+    rondaEtiqueta?: string,
+  ): Promise<Aspirante> {
+    const candidates = await this.findAspirantesByIdentidad({
+      tenantId,
+      email,
+      registroHospital,
+      active: true,
+      rondaEtiqueta,
+    });
+
+    if (candidates.length === 0) {
+      await bcrypt.compare(password, DUMMY_HASH);
+      throw new UnauthorizedException(CREDENTIALS_ERROR);
+    }
+
+    const passwordMatches: Aspirante[] = [];
+    for (const candidate of candidates) {
+      if (await bcrypt.compare(password, candidate.passwordHash)) {
+        passwordMatches.push(candidate);
+      }
+    }
+
+    if (passwordMatches.length === 1) {
+      return passwordMatches[0];
+    }
+
+    throw new UnauthorizedException(
+      passwordMatches.length > 1
+        ? 'Hay más de una cuenta activa con estos datos. Indica la ronda de evaluación.'
+        : CREDENTIALS_ERROR,
+    );
+  }
+
+  private async findAspirantesByIdentidad(params: {
+    tenantId: string;
+    email: string;
+    registroHospital: string;
+    active?: boolean;
+    rondaEtiqueta?: string;
+  }): Promise<Aspirante[]> {
+    const where: FindOptionsWhere<Aspirante> = {
+      tenantId: params.tenantId,
+      email: params.email.toLowerCase(),
+      registroHospital: params.registroHospital,
+    };
+    if (params.active != null) {
+      where.active = params.active;
+    }
+
+    const rows = await this.aspiranteRepository.find({
+      where,
+      relations: ['evaluationFlowStep', 'rondaEvaluacion'],
+    });
+
+    const etiqueta = params.rondaEtiqueta?.trim().toLowerCase();
+    if (!etiqueta) {
+      return rows;
+    }
+
+    return rows.filter(
+      (row) => row.rondaEvaluacion?.etiqueta.trim().toLowerCase() === etiqueta,
+    );
+  }
+
+  private async resolveRondaEtiqueta(
+    rondaEvaluacionId: string | null,
+  ): Promise<string | null> {
+    if (!rondaEvaluacionId) {
+      return null;
+    }
+    const ronda = await this.rondaRepository.findOne({
+      where: { id: rondaEvaluacionId },
+      select: ['id', 'etiqueta'],
+    });
+    return ronda?.etiqueta ?? null;
   }
 
   async solicitarActivacion(
@@ -257,13 +338,22 @@ export class AuthService {
       };
     }
 
-    const aspirante = await this.aspiranteRepository.findOne({
-      where: {
-        tenantId: hospital.uuid,
-        email,
-        registroHospital,
-      },
+    const matches = await this.findAspirantesByIdentidad({
+      tenantId: hospital.uuid,
+      email,
+      registroHospital,
+      rondaEtiqueta: dto.rondaEtiqueta,
     });
+
+    if (matches.length > 1) {
+      return {
+        estado: SolicitarActivacionEstado.RondaRequerida,
+        mensaje:
+          'Hay más de una cuenta con estos datos. Indica la ronda de evaluación.',
+      };
+    }
+
+    const aspirante = matches[0];
 
     if (!aspirante) {
       return {
@@ -605,7 +695,7 @@ export class AuthService {
       ),
     );
 
-    const tokenBundle = this.issueAspiranteAccessToken({
+    const tokenBundle = await this.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
       accesoCierraAt: hospital.accesoCierraAt,
@@ -701,12 +791,12 @@ export class AuthService {
 
     return {
       flowUpdated: true,
-      ...this.issueAspiranteAccessToken({
+      ...(await this.issueAspiranteAccessToken({
         aspirante,
         hospitalSlug: hospital.slug,
         accesoCierraAt: hospital.accesoCierraAt,
         flowStep: nextStep,
-      }),
+      })),
     };
   }
 
@@ -771,12 +861,12 @@ export class AuthService {
 
     return {
       flowUpdated: true,
-      ...this.issueAspiranteAccessToken({
+      ...(await this.issueAspiranteAccessToken({
         aspirante,
         hospitalSlug: hospital.slug,
         accesoCierraAt: hospital.accesoCierraAt,
         flowStep: prevStep,
-      }),
+      })),
     };
   }
 }

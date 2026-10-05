@@ -1,9 +1,19 @@
-import { Column, Entity, JoinColumn, ManyToOne, Unique } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { TenantBaseEntity } from '../../common/entities/tenant-base.entity';
 import { EvaluationFlowStep } from './evaluation-flow-step.entity';
+import { Ronda } from './ronda.entity';
 
 @Entity('aspirantes')
-@Unique(['tenantId', 'email', 'registroHospital'])
+@Index(
+  'uk_aspirantes_tenant_email_registro_ronda',
+  ['tenantId', 'email', 'registroHospital', 'rondaEvaluacionId'],
+  { unique: true, where: '"ronda_evaluacion_id" IS NOT NULL' },
+)
+@Index(
+  'uk_aspirantes_tenant_email_registro_sin_ronda',
+  ['tenantId', 'email', 'registroHospital'],
+  { unique: true, where: '"ronda_evaluacion_id" IS NULL' },
+)
 export class Aspirante extends TenantBaseEntity {
   @Column({ type: 'text' })
   email: string;
@@ -93,4 +103,11 @@ export class Aspirante extends TenantBaseEntity {
 
   @Column({ type: 'timestamptz', nullable: true, name: 'claimed_at' })
   claimedAt: Date | null;
+
+  @Column({ type: 'uuid', name: 'ronda_evaluacion_id', nullable: true })
+  rondaEvaluacionId: string | null;
+
+  @ManyToOne(() => Ronda)
+  @JoinColumn({ name: 'ronda_evaluacion_id' })
+  rondaEvaluacion?: Ronda;
 }
