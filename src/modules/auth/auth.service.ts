@@ -266,12 +266,13 @@ export class AuthService {
       }
     }
 
-    if (passwordMatches.length === 1) {
-      return passwordMatches[0];
+    const allowed = passwordMatches.filter((candidate) => candidate.rondaEvaluacionId);
+    if (allowed.length === 1) {
+      return allowed[0];
     }
 
     throw new UnauthorizedException(
-      passwordMatches.length > 1
+      allowed.length > 1
         ? 'Hay más de una cuenta activa con estos datos. Indica la ronda de evaluación.'
         : CREDENTIALS_ERROR,
     );

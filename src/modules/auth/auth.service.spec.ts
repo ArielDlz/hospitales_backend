@@ -160,6 +160,39 @@ describe('AuthService.issueAspiranteAccessToken', () => {
       expect(payload.rondaEtiqueta).toBe('Ronda 2027');
     });
 
+    it('rejects login when the matching aspirante has no ronda', async () => {
+      aspiranteRepo.find.mockResolvedValue([
+        { ...prior, rondaEvaluacionId: null, rondaEvaluacion: null },
+      ]);
+
+      await expect(
+        service.loginAspirante({
+          slug: 'hospital-test',
+          email: 'juan@example.com',
+          registroHospital: 'REG-1',
+          password: 'secret-a',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(jwtService.sign).not.toHaveBeenCalled();
+    });
+
+    it('ignores a historical account without ronda when another round matches', async () => {
+      aspiranteRepo.find.mockResolvedValue([
+        { ...prior, rondaEvaluacionId: null, rondaEvaluacion: null },
+        { ...later, passwordHash: hashA },
+      ]);
+
+      await service.loginAspirante({
+        slug: 'hospital-test',
+        email: 'juan@example.com',
+        registroHospital: 'REG-1',
+        password: 'secret-a',
+      });
+
+      const payload = jwtService.sign.mock.calls[0][0] as JwtPayloadAspirante;
+      expect(payload.sub).toBe('asp-2');
+    });
+
     it('refuses to pick a round when the password matches more than one active account', async () => {
       aspiranteRepo.find.mockResolvedValue([
         prior,
