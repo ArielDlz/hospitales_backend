@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Aspirante } from '../aspirante.entity';
 import { EvaluationFlowStep } from '../evaluation-flow-step.entity';
+import { Ronda } from '../ronda.entity';
 import { HospitalService } from '../../hospital/hospital.service';
 import { MailService } from '../../mail/mail.service';
 import { Hospital } from '../../hospital/hospital.entity';
@@ -38,6 +39,8 @@ export class AspiranteImportService {
   constructor(
     @InjectRepository(Aspirante)
     private readonly aspiranteRepository: Repository<Aspirante>,
+    @InjectRepository(Ronda)
+    private readonly rondaRepository: Repository<Ronda>,
     @InjectRepository(EvaluationFlowStep)
     private readonly evaluationFlowStepRepository: Repository<EvaluationFlowStep>,
     private readonly hospitalService: HospitalService,
@@ -78,7 +81,20 @@ export class AspiranteImportService {
 
     const pending: PendingInvite[] = [];
 
+    const etiqueta = ctx.rows[0].rondaEvaluacion.trim();
+
     await this.dataSource.transaction(async (manager) => {
+      const ronda = await this.resolveRonda(manager.getRepository(Ronda), {
+        tenantId: ctx.hospital.uuid,
+        etiqueta,
+        createIfMissing: true,
+      });
+      if (!ronda) {
+        throw new InternalServerErrorException(
+          'No se pudo resolver la ronda de evaluación',
+        );
+      }
+
       const repo = manager.getRepository(Aspirante);
       for (const row of ctx.rows) {
         const token = crypto.randomBytes(32).toString('hex');
@@ -101,6 +117,7 @@ export class AspiranteImportService {
           primerAccesoToken: token,
           primerAccesoExpira: expira,
           evaluationFlowId: pasoInvitacion.id,
+          rondaEvaluacionId: ronda.id,
         });
         const saved = await repo.save(aspirante);
         pending.push({ aspirante: saved, token });
@@ -234,6 +251,9 @@ export class AspiranteImportService {
       if (!row.nombre.trim()) {
         addError(row.rowNumber, 'nombre es requerido', extras);
       }
+      if (!row.rondaEvaluacion.trim()) {
+        addError(row.rowNumber, 'ronda_evaluacion es requerido', extras);
+      }
 
       if (row.email.trim() && row.registroHospital.trim()) {
         const key = `${row.email.trim().toLowerCase()}|${row.registroHospital.trim()}`;
@@ -250,6 +270,31 @@ export class AspiranteImportService {
       }
     }
 
+    const etiquetas = parsed.rows
+      .map((r) => r.rondaEvaluacion.trim())
+      .filter((etiqueta) => etiqueta.length > 0);
+    const canonicalEtiqueta = etiquetas[0] ?? '';
+    const canonicalKey = canonicalEtiqueta.toLowerCase();
+    const hasMixedRonda = etiquetas.some(
+      (etiqueta) => etiqueta.toLowerCase() !== canonicalKey,
+    );
+
+    if (hasMixedRonda) {
+      for (const row of parsed.rows) {
+        const value = row.rondaEvaluacion.trim();
+        if (value && value.toLowerCase() !== canonicalKey) {
+          addError(
+            row.rowNumber,
+            'todas las filas deben tener la misma ronda_evaluacion',
+            {
+              email: row.email || undefined,
+              registroHospital: row.registroHospital || undefined,
+            },
+          );
+        }
+      }
+    }
+
     const candidateKeys = parsed.rows
       .filter((r) => r.email.trim() && r.registroHospital.trim())
       .map((r) => ({
@@ -258,12 +303,22 @@ export class AspiranteImportService {
         rowNumber: r.rowNumber,
       }));
 
-    if (candidateKeys.length > 0) {
+    const ronda =
+      canonicalEtiqueta && !hasMixedRonda
+        ? await this.resolveRonda(this.rondaRepository, {
+            tenantId: hospital.uuid,
+            etiqueta: canonicalEtiqueta,
+            createIfMissing: false,
+          })
+        : null;
+
+    if (candidateKeys.length > 0 && ronda) {
       const emails = [...new Set(candidateKeys.map((c) => c.email))];
       const existing = await this.aspiranteRepository
         .createQueryBuilder('a')
         .select(['a.email', 'a.registroHospital'])
         .where('a.tenant_id = :tenantId', { tenantId: hospital.uuid })
+        .andWhere('a.ronda_evaluacion_id = :rondaId', { rondaId: ronda.id })
         .andWhere('LOWER(a.email) IN (:...emails)', { emails })
         .getMany();
 
@@ -306,5 +361,30 @@ export class AspiranteImportService {
         errors,
       },
     };
+  }
+
+  private async resolveRonda(
+    repo: Repository<Ronda>,
+    params: { tenantId: string; etiqueta: string; createIfMissing: boolean },
+  ): Promise<Ronda | null> {
+    const etiqueta = params.etiqueta.trim();
+    const existing = await repo
+      .createQueryBuilder('r')
+      .where('r.tenant_id = :tenantId', { tenantId: params.tenantId })
+      .andWhere('LOWER(r.etiqueta) = :etiqueta', {
+        etiqueta: etiqueta.toLowerCase(),
+      })
+      .getOne();
+
+    if (existing || !params.createIfMissing) {
+      return existing;
+    }
+
+    return repo.save(
+      repo.create({
+        tenantId: params.tenantId,
+        etiqueta,
+      }),
+    );
   }
 }

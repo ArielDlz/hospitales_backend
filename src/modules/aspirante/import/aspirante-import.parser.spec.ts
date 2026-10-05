@@ -94,6 +94,7 @@ describe('aspirante-import.parser', () => {
           email: 'juan@example.com',
           rfc: 'RFC1',
           telefono: '5511111111',
+          ronda_evaluacion: 'Ronda 2026',
         },
       ]);
 
@@ -103,6 +104,7 @@ describe('aspirante-import.parser', () => {
       expect(parsed.rows[0].genero).toBe(GeneroAspirante.Hombre);
       expect(parsed.rows[0].email).toBe('juan@example.com');
       expect(parsed.rows[0].documento).toBe('CURP1');
+      expect(parsed.rows[0].rondaEvaluacion).toBe('Ronda 2026');
     });
 
     it('lowercases email from the sheet', async () => {
@@ -165,9 +167,10 @@ describe('aspirante-import.parser', () => {
             email: 'solo@example.com',
             apellidos: 'Pérez',
             nombre: 'Ana',
+            ronda_evaluacion: 'Ronda 2026',
           },
         ],
-        ['registro_hospital', 'email', 'apellidos', 'nombre'],
+        ['registro_hospital', 'email', 'apellidos', 'nombre', 'ronda_evaluacion'],
       );
 
       const parsed = await parseAspiranteImportBuffer(buffer);
@@ -178,6 +181,7 @@ describe('aspirante-import.parser', () => {
         email: 'solo@example.com',
         apellidos: 'Pérez',
         nombre: 'Ana',
+        rondaEvaluacion: 'Ronda 2026',
         documento: null,
         especialidad: null,
         modalidad: null,

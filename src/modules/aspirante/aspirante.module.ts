@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Aspirante } from './aspirante.entity';
+import { Ronda } from './ronda.entity';
 import { EvaluationFlowStep } from './evaluation-flow-step.entity';
 import { AspiranteController } from './aspirante.controller';
 import { AspiranteService } from './aspirante.service';
@@ -22,6 +23,7 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
   imports: [
     TypeOrmModule.forFeature([
       Aspirante,
+      Ronda,
       EvaluationFlowStep,
       PruebaHospital,
       Prueba,

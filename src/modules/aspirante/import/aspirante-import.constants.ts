@@ -13,6 +13,7 @@ export const ASPIRANTE_IMPORT_HEADERS = [
   'email',
   'rfc',
   'telefono',
+  'ronda_evaluacion',
 ] as const;
 
 export type AspiranteImportHeader = (typeof ASPIRANTE_IMPORT_HEADERS)[number];
@@ -22,4 +23,5 @@ export const ASPIRANTE_IMPORT_REQUIRED_HEADERS: AspiranteImportHeader[] = [
   'email',
   'apellidos',
   'nombre',
+  'ronda_evaluacion',
 ];
