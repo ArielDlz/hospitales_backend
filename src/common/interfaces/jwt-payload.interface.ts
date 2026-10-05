@@ -33,6 +33,8 @@ export interface JwtPayloadAspirante {
    * Tokens emitidos antes de este campo no lo traen: el frontend debe usar POST /payments/intent.
    */
   paymentProvider?: 'stripe' | 'banorte';
+  /** Etiqueta de la ronda de evaluación. Null si el aspirante no tiene ronda. */
+  rondaEtiqueta: string | null;
   iat?: number;
   exp?: number;
 }

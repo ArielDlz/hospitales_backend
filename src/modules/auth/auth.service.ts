@@ -15,6 +15,7 @@ import { IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Aspirante } from '../aspirante/aspirante.entity';
+import { Ronda } from '../aspirante/ronda.entity';
 import { EvaluationFlowStep } from '../aspirante/evaluation-flow-step.entity';
 import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
@@ -102,6 +103,8 @@ export class AuthService {
     private readonly evaluadorTenantRepository: Repository<EvaluadorTenant>,
     @InjectRepository(Aspirante)
     private readonly aspiranteRepository: Repository<Aspirante>,
+    @InjectRepository(Ronda)
+    private readonly rondaRepository: Repository<Ronda>,
     @InjectRepository(EvaluationFlowStep)
     private readonly evaluationFlowStepRepository: Repository<EvaluationFlowStep>,
     @InjectRepository(Hospital)
@@ -196,7 +199,7 @@ export class AuthService {
       );
     }
 
-    return this.issueAspiranteAccessToken({
+    return await this.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
       accesoCierraAt: hospital.accesoCierraAt,
@@ -209,7 +212,7 @@ export class AuthService {
    * TTL: always 1d (soft-close does not shorten sessions).
    * Reutilizar tras login, activar cuenta, avanzar/retroceder paso, etc.
    */
-  issueAspiranteAccessToken(params: {
+  async issueAspiranteAccessToken(params: {
     aspirante: Pick<
       Aspirante,
       | 'id'
@@ -218,12 +221,16 @@ export class AuthService {
       | 'nombre'
       | 'apellidos'
       | 'paymentLink'
+      | 'rondaEvaluacionId'
     >;
     hospitalSlug: string;
     accesoCierraAt: Date | null;
     flowStep: Pick<EvaluationFlowStep, 'orderId' | 'descripcion'>;
-  }): { accessToken: string; expiresIn: string } {
+  }): Promise<{ accessToken: string; expiresIn: string }> {
     const fullName = `${params.aspirante.nombre} ${params.aspirante.apellidos}`.trim();
+    const rondaEtiqueta = await this.resolveRondaEtiqueta(
+      params.aspirante.rondaEvaluacionId,
+    );
     const payload: JwtPayloadAspirante = {
       sub: params.aspirante.id,
       type: 'aspirante',
@@ -234,10 +241,24 @@ export class AuthService {
       evaluationFlowOrderId: params.flowStep.orderId,
       evaluationFlowDescripcion: params.flowStep.descripcion,
       paymentProvider: resolvePaymentProvider(params.aspirante.paymentLink),
+      rondaEtiqueta,
     };
     const expiresIn = resolveAspiranteJwtExpiresIn();
     const accessToken = this.jwtService.sign(payload, { expiresIn });
     return { accessToken, expiresIn };
+  }
+
+  private async resolveRondaEtiqueta(
+    rondaEvaluacionId: string | null,
+  ): Promise<string | null> {
+    if (!rondaEvaluacionId) {
+      return null;
+    }
+    const ronda = await this.rondaRepository.findOne({
+      where: { id: rondaEvaluacionId },
+      select: ['id', 'etiqueta'],
+    });
+    return ronda?.etiqueta ?? null;
   }
 
   async solicitarActivacion(
@@ -605,7 +626,7 @@ export class AuthService {
       ),
     );
 
-    const tokenBundle = this.issueAspiranteAccessToken({
+    const tokenBundle = await this.issueAspiranteAccessToken({
       aspirante,
       hospitalSlug: hospital.slug,
       accesoCierraAt: hospital.accesoCierraAt,
@@ -701,12 +722,12 @@ export class AuthService {
 
     return {
       flowUpdated: true,
-      ...this.issueAspiranteAccessToken({
+      ...(await this.issueAspiranteAccessToken({
         aspirante,
         hospitalSlug: hospital.slug,
         accesoCierraAt: hospital.accesoCierraAt,
         flowStep: nextStep,
-      }),
+      })),
     };
   }
 
@@ -771,12 +792,12 @@ export class AuthService {
 
     return {
       flowUpdated: true,
-      ...this.issueAspiranteAccessToken({
+      ...(await this.issueAspiranteAccessToken({
         aspirante,
         hospitalSlug: hospital.slug,
         accesoCierraAt: hospital.accesoCierraAt,
         flowStep: prevStep,
-      }),
+      })),
     };
   }
 }
