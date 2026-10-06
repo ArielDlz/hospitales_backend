@@ -31,7 +31,7 @@ import { buildEnviarAlHospitalFlags } from '../google-drive/enviar-al-hospital.f
 import { parseEnabledTenantIds } from '../google-drive/google-drive-tenants';
 type AspirantePublic = Omit<
   Aspirante,
-  'passwordHash' | 'primerAccesoToken' | 'evaluationFlowStep'
+  'passwordHash' | 'primerAccesoToken' | 'evaluationFlowStep' | 'rondaEvaluacion'
 >;
 type VeredictoListItem = {
   idVeredicto: number;
@@ -48,6 +48,7 @@ type AspiranteWithHospitalName = AspirantePublic & {
   canEnviarAlHospital: boolean;
   enviadoAlHospital: boolean;
   veredicto: VeredictoListItem | null;
+  rondaEtiqueta: string | null;
 };
 
 @Injectable()
@@ -386,7 +387,7 @@ export class AspiranteService {
 
     const rows = await this.aspiranteRepository.find({
       where,
-      relations: ['evaluationFlowStep'],
+      relations: ['evaluationFlowStep', 'rondaEvaluacion'],
       order: { claimedAt: 'ASC' },
     });
 
@@ -430,7 +431,7 @@ export class AspiranteService {
 
     const rows = await this.aspiranteRepository.find({
       where,
-      relations: ['evaluationFlowStep'],
+      relations: ['evaluationFlowStep', 'rondaEvaluacion'],
       order: { createdAt: 'DESC' },
     });
 
@@ -489,7 +490,7 @@ export class AspiranteService {
       };
       const rows = await this.aspiranteRepository.find({
         where,
-        relations: ['evaluationFlowStep'],
+        relations: ['evaluationFlowStep', 'rondaEvaluacion'],
         order: { createdAt: 'DESC' },
       });
       return this.mapWithHospitalName(rows, user);
@@ -501,7 +502,7 @@ export class AspiranteService {
     }
     const rows = await this.aspiranteRepository.find({
       where,
-      relations: ['evaluationFlowStep'],
+      relations: ['evaluationFlowStep', 'rondaEvaluacion'],
       order: { createdAt: 'DESC' },
     });
     return this.mapWithHospitalName(rows, user);
@@ -607,7 +608,13 @@ export class AspiranteService {
     user: JwtPayloadAdmin,
     veredicto: VeredictoListItem | null,
   ): AspiranteWithHospitalName {
-    const { passwordHash: _, primerAccesoToken: __, evaluationFlowStep, ...rest } = row;
+    const {
+      passwordHash: _,
+      primerAccesoToken: __,
+      evaluationFlowStep,
+      rondaEvaluacion,
+      ...rest
+    } = row;
     const evaluationFlowOrderId = evaluationFlowStep?.orderId ?? null;
     return {
       ...rest,
@@ -618,6 +625,7 @@ export class AspiranteService {
       canEvaluar: evaluationFlowOrderId === 5 || evaluationFlowOrderId === 6,
       evaluadorAsignadoEmail,
       veredicto,
+      rondaEtiqueta: row.rondaEvaluacionId ? (rondaEvaluacion?.etiqueta ?? null) : null,
       ...buildEnviarAlHospitalFlags(
         row,
         user.rol,

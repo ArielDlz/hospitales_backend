@@ -74,6 +74,14 @@ export class AspiranteResponseDto {
   })
   registroHospital: string;
 
+  @ApiProperty({
+    example: 'Ronda 2026',
+    nullable: true,
+    description:
+      'Etiqueta de la ronda de evaluación. Null si el aspirante no tiene ronda_evaluacion_id.',
+  })
+  rondaEtiqueta: string | null;
+
   @ApiProperty({ example: 'García' })
   apellidos: string;
 

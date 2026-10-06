@@ -297,7 +297,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     );
     expect(aspiranteRepo.find).toHaveBeenCalledWith({
       where: { tenantId, email: 'a@test.com' },
-      relations: ['evaluationFlowStep'],
+        relations: ['evaluationFlowStep'],
     });
   });
 
@@ -391,6 +391,46 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     ).rejects.toThrow('El aspirante no tiene token de primer acceso');
     expect(aspiranteRepo.save).not.toHaveBeenCalled();
     expect(mailService.sendRecordatorioPrimerAccesoEmail).not.toHaveBeenCalled();
+  });
+
+  it('findAll con slug admin incluye rondaEtiqueta o null', async () => {
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      nombre: 'Hospital General',
+    });
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-1',
+        tenantId,
+        nombre: 'Juan',
+        apellidos: 'García',
+        passwordHash: 'x',
+        primerAccesoToken: null,
+        idEvaluadorAsignado: null,
+        rondaEvaluacionId: 'ronda-1',
+        rondaEvaluacion: { id: 'ronda-1', etiqueta: 'Ronda 2026' },
+        evaluationFlowStep: { orderId: 1, descripcion: 'Invitación' },
+      },
+      {
+        id: 'asp-2',
+        tenantId,
+        nombre: 'Ana',
+        apellidos: 'López',
+        passwordHash: 'x',
+        primerAccesoToken: null,
+        idEvaluadorAsignado: null,
+        rondaEvaluacionId: null,
+        rondaEvaluacion: null,
+        evaluationFlowStep: { orderId: 1, descripcion: 'Invitación' },
+      },
+    ]);
+
+    const items = await service.findAll(undefined, 'admin', false, adminUser);
+
+    expect(items.map((item) => ({ id: item.id, rondaEtiqueta: item.rondaEtiqueta }))).toEqual([
+      { id: 'asp-1', rondaEtiqueta: 'Ronda 2026' },
+      { id: 'asp-2', rondaEtiqueta: null },
+    ]);
   });
 
   it('findAll expone canEnviarAlHospital solo para admin con informe firmado en tenant habilitado', async () => {
@@ -562,7 +602,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
         active: true,
         evaluationFlowStep: { orderId: 2 },
       },
-      relations: ['evaluationFlowStep'],
+        relations: ['evaluationFlowStep', 'rondaEvaluacion'],
       order: { claimedAt: 'ASC' },
     });
     expect(item.claimedAt).toEqual(new Date('2026-09-17T10:00:00.000Z'));
@@ -588,7 +628,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
         evaluationFlowStep: { orderId: 2 },
         tenantId,
       },
-      relations: ['evaluationFlowStep'],
+        relations: ['evaluationFlowStep', 'rondaEvaluacion'],
       order: { claimedAt: 'ASC' },
     });
   });
