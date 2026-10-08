@@ -1121,7 +1121,7 @@ describe('EvaluacionesService', () => {
         hospitalNombre: 'hospital-general',
         modalidad: 'presencial',
         especialidad: 'cardiologia',
-        filename: `PEGJ880527HDFRRL09_Cardiología_${new Date().getFullYear()}.pdf`,
+        filename: 'PEGJ880527HDFRRL09_1_A_25_2027.pdf',
         buffer: expect.any(Buffer),
       });
       expect(aspiranteRepo.update).toHaveBeenCalledWith(
@@ -1135,6 +1135,25 @@ describe('EvaluacionesService', () => {
       expect(result.googleDriveFileId).toBe('drive-file-1');
       expect(result.message).toBe('Informe enviado al hospital correctamente');
       expect(s3Storage.uploadBuffer).not.toHaveBeenCalled();
+    });
+
+    it('conserva el nombre del objeto en S3, incluido un informe extendido', async () => {
+      const extendidoUrl =
+        'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf';
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...signedAspirante,
+        veredictoInforme: extendidoUrl,
+      });
+
+      await service.enviarInformeAlHospital(aspiranteId, adminUser);
+
+      expect(global.fetch).toHaveBeenCalledWith(extendidoUrl);
+      expect(googleDriveService.uploadSignedInforme).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filename:
+            'PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf',
+        }),
+      );
     });
   });
 

@@ -125,19 +125,3 @@ export function buildContentDispositionAttachment(filename: string): string {
   );
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
 }
-
-/**
- * Drive filename for Enviar al hospital:
- * `{CURP}_{especialidad}_{YYYY}.pdf`
- * especialidad is the raw DB value with illegal filename characters stripped.
- * YYYY is the calendar year at send time.
- */
-export function buildInformeDriveFilename(
-  documento: string,
-  especialidad: string,
-  year: number,
-): string {
-  const curp = sanitizeFilenamePart(documento);
-  const especialidadPart = sanitizeFilenamePart(especialidad);
-  return `${curp}_${especialidadPart}_${year}.pdf`;
-}
