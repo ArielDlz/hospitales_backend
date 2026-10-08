@@ -1,8 +1,8 @@
 import {
-  buildInformeDriveFilename,
   buildInformeExtendidoFilename,
   buildInformeFirmadoFilename,
   buildInformeFirmadoS3Key,
+  filenameFromInformeUrl,
   resolveVeredictoInicial,
   slugifyPathSegment,
 } from './informe-firmado-filename.util';
@@ -24,21 +24,21 @@ describe('informe-firmado-filename.util', () => {
     });
   });
 
-  describe('buildInformeDriveFilename', () => {
-    it('arma CURP_especialidad_YYYY.pdf conservando acentos y espacios', () => {
+  describe('filenameFromInformeUrl', () => {
+    it('toma el nombre del objeto en S3', () => {
       expect(
-        buildInformeDriveFilename(
-          'PEGJ880527HDFRRL09',
-          'Medicina Interna',
-          2026,
+        filenameFromInformeUrl(
+          'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
         ),
-      ).toBe('PEGJ880527HDFRRL09_Medicina Interna_2026.pdf');
+      ).toBe('PEGJ880527HDFRRL09_1_A_25_2027.pdf');
     });
 
-    it('elimina caracteres ilegales de especialidad', () => {
+    it('conserva el nombre de un informe extendido', () => {
       expect(
-        buildInformeDriveFilename('PEGJ880527HDFRRL09', 'Cardio/Logía', 2026),
-      ).toBe('PEGJ880527HDFRRL09_CardioLogía_2026.pdf');
+        filenameFromInformeUrl(
+          'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf',
+        ),
+      ).toBe('PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf');
     });
   });
 

@@ -39,10 +39,10 @@ import { GoogleDriveService } from '../google-drive/google-drive.service';
 import { buildEnviarAlHospitalFlags } from '../google-drive/enviar-al-hospital.flags';
 import { EnviarInformeAlHospitalResponseDto } from './dto/enviar-informe-al-hospital-response.dto';
 import {
-  buildInformeDriveFilename,
   buildInformeExtendidoFilename,
   buildInformeFirmadoFilename,
   buildInformeFirmadoS3Key,
+  filenameFromInformeUrl,
   resolveInformeFirmadoFilename,
   slugifyPathSegment,
 } from './informe-firmado-filename.util';
@@ -672,11 +672,7 @@ export class EvaluacionesService {
     const buffer = await this.fetchSignedInformeBuffer(
       aspirante.veredictoInforme,
     );
-    const filename = buildInformeDriveFilename(
-      documento,
-      especialidad,
-      new Date().getFullYear(),
-    );
+    const filename = filenameFromInformeUrl(aspirante.veredictoInforme);
 
     const uploaded = await this.googleDriveService.uploadSignedInforme({
       hospitalNombre: hospitalFolder,
