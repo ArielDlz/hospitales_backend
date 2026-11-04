@@ -7,6 +7,8 @@ export interface PrimerAccesoEmailParams {
   registroHospital: string;
   activacionUrl: string;
   variant?: PrimerAccesoEmailVariant;
+  /** hospitales.acceso_abre_at. Invitation copy uses the Mexico City calendar day. */
+  accesoAbreAt?: Date | string | null;
 }
 
 export interface PrimerAccesoEmailContent {
@@ -21,8 +23,68 @@ const SUBJECT =
 const PLATFORM_TITLE =
   'Plataforma de pruebas psicométricas de Psique y Cultura';
 
-const INTRO_INVITACION =
-  'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura. Por favor ten en cuenta que la plataforma se habilitará al iniciar el día 29 de agosto de 2026. Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:';
+const INTRO_INVITACION_SELECCION =
+  'Has sido seleccionado para continuar con tu proceso de selección. Continuarás con la evaluación psicométrica de Psique y Cultura.';
+
+const INTRO_INVITACION_CTA =
+  'Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:';
+
+const MESES_ES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+] as const;
+
+/** acceso_abre_at is an absolute instant; the email states the local opening day. */
+const APERTURA_TIME_ZONE = 'America/Mexico_City';
+
+export function formatFechaAperturaPlataforma(
+  value: Date | string | null | undefined,
+): string | null {
+  if (value == null || value === '') {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: APERTURA_TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).formatToParts(date);
+
+  const day = parts.find((part) => part.type === 'day')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const monthName = month ? MESES_ES[Number(month) - 1] : undefined;
+  if (!day || !monthName || !year) {
+    return null;
+  }
+
+  return `${day} de ${monthName} de ${year}`;
+}
+
+function buildIntroInvitacion(accesoAbreAt?: Date | string | null): string {
+  const fecha = formatFechaAperturaPlataforma(accesoAbreAt);
+  if (!fecha) {
+    return `${INTRO_INVITACION_SELECCION} ${INTRO_INVITACION_CTA}`;
+  }
+
+  return `${INTRO_INVITACION_SELECCION} Por favor ten en cuenta que la plataforma se habilitará al iniciar el día ${fecha}. ${INTRO_INVITACION_CTA}`;
+}
 
 const INTRO_RECORDATORIO =
   'Notamos que aún no has ingresado a la plataforma a realizar tu proceso de evaluación psicométrica, este mensaje es un recordatorio, ya que el proceso está a punto de concluir. Por favor activa tu cuenta accediendo desde el siguiente botón:';
@@ -40,11 +102,14 @@ export function buildPrimerAccesoEmail(
     registroHospital,
     activacionUrl,
     variant = 'invitacion',
+    accesoAbreAt,
   } = params;
 
   const telefonoDisplay = telefono?.trim() || 'No indicado';
   const isRecordatorio = variant === 'recordatorio';
-  const intro = isRecordatorio ? INTRO_RECORDATORIO : INTRO_INVITACION;
+  const intro = isRecordatorio
+    ? INTRO_RECORDATORIO
+    : buildIntroInvitacion(accesoAbreAt);
 
   const text = [
     PLATFORM_TITLE,
