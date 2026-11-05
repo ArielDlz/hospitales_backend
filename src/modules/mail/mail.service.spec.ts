@@ -12,6 +12,7 @@ describe('MailService', () => {
   const hospital = {
     nombre: 'Hospital Test',
     slug: 'hospital-test',
+    accesoAbreAt: new Date('2026-11-06T06:00:00.000Z'),
   } as Hospital;
 
   const aspirante = {
@@ -73,9 +74,14 @@ describe('MailService', () => {
         textContent: expect.stringContaining('REG-001'),
       }),
     );
-    expect(brevoClient.sendTransactional.mock.calls[0][0].htmlContent).toContain(
+    const html = brevoClient.sendTransactional.mock.calls[0][0].htmlContent;
+    expect(html).toContain(
       'https://hospital-test.arieldelao.dev/confirmar-acceso?token=token-abc',
     );
+    expect(html).toContain(
+      'Por favor ten en cuenta que la plataforma se habilitará al iniciar el día 06 de noviembre de 2026. Para activar tu cuenta y establecer tu contraseña, haz clic en el siguiente enlace:',
+    );
+    expect(html).not.toContain('29 de agosto de 2026');
   });
 
   it('sendPrimerAccesoEmail should throw when Brevo is not configured', async () => {
@@ -112,6 +118,8 @@ describe('MailService', () => {
     expect(html).toContain('Activar mi cuenta');
     expect(html).toContain('+525527592438');
     expect(html).not.toContain('29 de agosto de 2026');
+    expect(html).not.toContain('06 de noviembre de 2026');
+    expect(html).not.toContain('se habilitará al iniciar el día');
   });
 
   it('sendRecordatorioPrimerAccesoEmail should throw when Brevo is not configured', async () => {

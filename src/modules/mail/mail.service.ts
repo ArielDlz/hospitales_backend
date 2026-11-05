@@ -64,6 +64,7 @@ export class MailService {
       telefono: aspirante.telefono,
       registroHospital: aspirante.registroHospital,
       activacionUrl,
+      accesoAbreAt: hospital.accesoAbreAt,
     });
 
     const sender = this.getSender();
