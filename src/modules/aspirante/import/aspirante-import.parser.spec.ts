@@ -95,6 +95,8 @@ describe('aspirante-import.parser', () => {
           rfc: 'RFC1',
           telefono: '5511111111',
           ronda_evaluacion: 'Ronda 2026',
+          payment_link: 'https://ligasdepago.banorte.com/abc',
+          payment_reference: 'REF-1',
         },
       ]);
 
@@ -105,6 +107,8 @@ describe('aspirante-import.parser', () => {
       expect(parsed.rows[0].email).toBe('juan@example.com');
       expect(parsed.rows[0].documento).toBe('CURP1');
       expect(parsed.rows[0].rondaEvaluacion).toBe('Ronda 2026');
+      expect(parsed.rows[0].paymentLink).toBe('https://ligasdepago.banorte.com/abc');
+      expect(parsed.rows[0].paymentReference).toBe('REF-1');
     });
 
     it('lowercases email from the sheet', async () => {
@@ -168,9 +172,19 @@ describe('aspirante-import.parser', () => {
             apellidos: 'Pérez',
             nombre: 'Ana',
             ronda_evaluacion: 'Ronda 2026',
+            payment_link: 'https://pay.example/abc',
+            payment_reference: 'REF-SOLO',
           },
         ],
-        ['registro_hospital', 'email', 'apellidos', 'nombre', 'ronda_evaluacion'],
+        [
+          'registro_hospital',
+          'email',
+          'apellidos',
+          'nombre',
+          'ronda_evaluacion',
+          'payment_link',
+          'payment_reference',
+        ],
       );
 
       const parsed = await parseAspiranteImportBuffer(buffer);
@@ -182,6 +196,8 @@ describe('aspirante-import.parser', () => {
         apellidos: 'Pérez',
         nombre: 'Ana',
         rondaEvaluacion: 'Ronda 2026',
+        paymentLink: 'https://pay.example/abc',
+        paymentReference: 'REF-SOLO',
         documento: null,
         especialidad: null,
         modalidad: null,

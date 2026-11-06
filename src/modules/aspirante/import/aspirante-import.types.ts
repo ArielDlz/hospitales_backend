@@ -16,6 +16,8 @@ export interface AspiranteImportParsedRow {
   telefono: string | null;
   /** Etiqueta de la ronda, tal como llega en el Excel. */
   rondaEvaluacion: string;
+  paymentLink: string;
+  paymentReference: string;
 }
 
 export interface AspiranteImportRowError {

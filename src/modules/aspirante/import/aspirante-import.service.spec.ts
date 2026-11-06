@@ -105,6 +105,8 @@ describe('AspiranteImportService', () => {
     rfc: 'RFC',
     telefono: '551111',
     ronda_evaluacion: 'Ronda 2026',
+    payment_link: 'https://ligasdepago.banorte.com/abc',
+    payment_reference: 'REF-1',
   };
 
   function mockImportTransaction(existingRondaInTx: { id: string } | null = null) {
@@ -244,6 +246,20 @@ describe('AspiranteImportService', () => {
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
+  it('validate rejects missing payment columns', async () => {
+    const buffer = await buildWorkbook([
+      { ...baseRow, payment_link: '', payment_reference: '  ' },
+    ]);
+    const report = await service.validate(buffer, hospital.uuid);
+    expect(report.ok).toBe(false);
+    expect(report.errors[0].messages).toEqual(
+      expect.arrayContaining([
+        'payment_link es requerido',
+        'payment_reference es requerido',
+      ]),
+    );
+  });
+
   it('validate rejects a missing ronda_evaluacion', async () => {
     const buffer = await buildWorkbook([{ ...baseRow, ronda_evaluacion: '' }]);
     const report = await service.validate(buffer, hospital.uuid);
@@ -312,6 +328,8 @@ describe('AspiranteImportService', () => {
     expect(report.emailsEnviados).toBe(0);
     expect(saved).toHaveLength(2);
     expect((saved[0] as { genero: string }).genero).toBe(GeneroAspirante.Hombre);
+    expect(saved[0].paymentLink).toBe('https://ligasdepago.banorte.com/abc');
+    expect(saved[0].paymentReference).toBe('REF-1');
     expect((saved[1] as { genero: string }).genero).toBe(GeneroAspirante.Mujer);
     expect(mailService.sendPrimerAccesoEmail).not.toHaveBeenCalled();
   });

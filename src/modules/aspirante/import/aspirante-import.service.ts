@@ -113,6 +113,8 @@ export class AspiranteImportService {
           documento: row.documento,
           genero: row.genero,
           fechaNacimiento: row.fechaNacimiento,
+          paymentLink: row.paymentLink.trim(),
+          paymentReference: row.paymentReference.trim(),
           active: false,
           primerAccesoToken: token,
           primerAccesoExpira: expira,
@@ -253,6 +255,12 @@ export class AspiranteImportService {
       }
       if (!row.rondaEvaluacion.trim()) {
         addError(row.rowNumber, 'ronda_evaluacion es requerido', extras);
+      }
+      if (!row.paymentLink.trim()) {
+        addError(row.rowNumber, 'payment_link es requerido', extras);
+      }
+      if (!row.paymentReference.trim()) {
+        addError(row.rowNumber, 'payment_reference es requerido', extras);
       }
 
       if (row.email.trim() && row.registroHospital.trim()) {
