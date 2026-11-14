@@ -17,6 +17,7 @@ import { MailService } from '../mail/mail.service';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
 import { Veredicto } from '../evaluaciones/entities/veredicto.entity';
+import { RondaEvaluador } from './ronda-evaluador.entity';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import type { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 
@@ -47,6 +48,9 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
   const veredictoRepo = {
     find: jest.fn().mockResolvedValue([]),
   };
+  const rondaEvaluadorRepo = {
+    find: jest.fn().mockResolvedValue([]),
+  };
   const configService = {
     get: jest.fn(),
   };
@@ -73,6 +77,7 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
     aspiranteRepo.save.mockImplementation(async (row) => row);
     aspiranteEvaluacionRepo.find.mockResolvedValue([]);
     veredictoRepo.find.mockResolvedValue([]);
+    rondaEvaluadorRepo.find.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -93,6 +98,10 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
         {
           provide: getRepositoryToken(Veredicto),
           useValue: veredictoRepo,
+        },
+        {
+          provide: getRepositoryToken(RondaEvaluador),
+          useValue: rondaEvaluadorRepo,
         },
         { provide: HospitalService, useValue: hospitalService },
         { provide: MailService, useValue: mailService },
@@ -431,6 +440,95 @@ describe('AspiranteService.sendRecordatorioPruebas', () => {
       { id: 'asp-1', rondaEtiqueta: 'Ronda 2026' },
       { id: 'asp-2', rondaEtiqueta: null },
     ]);
+    expect(items[1].isRondaEnabled).toBe(false);
+    expect(items[1].evaluadoresEnabled).toEqual([]);
+  });
+
+  it('findAll expone si la ronda se puede evaluar y quiénes están habilitados', async () => {
+    hospitalService.findByUuid.mockResolvedValue({
+      uuid: tenantId,
+      nombre: 'Hospital General',
+    });
+    aspiranteRepo.find.mockResolvedValue([
+      {
+        id: 'asp-closed',
+        tenantId,
+        nombre: 'Juan',
+        apellidos: 'García',
+        passwordHash: 'x',
+        primerAccesoToken: null,
+        idEvaluadorAsignado: null,
+        rondaEvaluacionId: 'ronda-closed',
+        rondaEvaluacion: {
+          id: 'ronda-closed',
+          etiqueta: 'Cerrada',
+          puedeEvaluar: false,
+        },
+        evaluationFlowStep: { orderId: 5, descripcion: 'En evaluación' },
+      },
+      {
+        id: 'asp-open',
+        tenantId,
+        nombre: 'Ana',
+        apellidos: 'López',
+        passwordHash: 'x',
+        primerAccesoToken: null,
+        idEvaluadorAsignado: null,
+        rondaEvaluacionId: 'ronda-open',
+        rondaEvaluacion: {
+          id: 'ronda-open',
+          etiqueta: 'Abierta',
+          puedeEvaluar: true,
+        },
+        evaluationFlowStep: { orderId: 1, descripcion: 'Invitación' },
+      },
+      {
+        id: 'asp-limited',
+        tenantId,
+        nombre: 'Luis',
+        apellidos: 'Pérez',
+        passwordHash: 'x',
+        primerAccesoToken: null,
+        idEvaluadorAsignado: null,
+        rondaEvaluacionId: 'ronda-limited',
+        rondaEvaluacion: {
+          id: 'ronda-limited',
+          etiqueta: 'Limitada',
+          puedeEvaluar: true,
+        },
+        evaluationFlowStep: { orderId: 6, descripcion: 'Evaluación' },
+      },
+    ]);
+    rondaEvaluadorRepo.find.mockResolvedValue([
+      { rondaId: 'ronda-closed', usuarioId: 'eval-pedro' },
+      { rondaId: 'ronda-limited', usuarioId: 'eval-pedro' },
+      { rondaId: 'ronda-limited', usuarioId: 'eval-pablo' },
+    ]);
+
+    const items = await service.findAll(undefined, 'admin', false, adminUser);
+    const byId = new Map(items.map((item) => [item.id, item]));
+
+    expect(byId.get('asp-closed')).toEqual(
+      expect.objectContaining({
+        isRondaEnabled: false,
+        evaluadoresEnabled: ['eval-pedro'],
+        canEvaluar: true,
+      }),
+    );
+    expect(byId.get('asp-open')).toEqual(
+      expect.objectContaining({
+        isRondaEnabled: true,
+        evaluadoresEnabled: [],
+        canEvaluar: false,
+      }),
+    );
+    expect(byId.get('asp-limited')).toEqual(
+      expect.objectContaining({
+        isRondaEnabled: true,
+        evaluadoresEnabled: ['eval-pedro', 'eval-pablo'],
+        canEvaluar: true,
+      }),
+    );
   });
 
   it('findAll expone canEnviarAlHospital solo para admin con informe firmado en tenant habilitado', async () => {

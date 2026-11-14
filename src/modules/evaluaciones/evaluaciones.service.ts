@@ -11,6 +11,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, Repository } from 'typeorm';
 import { Aspirante } from '../aspirante/aspirante.entity';
 import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
+import { Ronda } from '../aspirante/ronda.entity';
+import { RondaEvaluador } from '../aspirante/ronda-evaluador.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
@@ -121,6 +123,10 @@ export class EvaluacionesService {
     private readonly usuarioRepository: Repository<UsuarioAdministrativo>,
     @InjectRepository(Hospital)
     private readonly hospitalRepository: Repository<Hospital>,
+    @InjectRepository(Ronda)
+    private readonly rondaRepository: Repository<Ronda>,
+    @InjectRepository(RondaEvaluador)
+    private readonly rondaEvaluadorRepository: Repository<RondaEvaluador>,
     private readonly pruebasService: PruebasService,
     private readonly evaluationFlowService: EvaluationFlowService,
     private readonly dataSource: DataSource,
@@ -801,6 +807,7 @@ export class EvaluacionesService {
       this.assertEvaluadorCanAccessAspirante(user, aspirante);
 
       if (!aspirante.idEvaluadorAsignado) {
+        await this.assertCanClaimRonda(aspirante, user.sub);
         await this.aspiranteRepository.update(
           { id: aspiranteId, idEvaluadorAsignado: IsNull() },
           {
@@ -830,6 +837,33 @@ export class EvaluacionesService {
     }
 
     return { aspirante, readOnly: true };
+  }
+
+  private async assertCanClaimRonda(
+    aspirante: Aspirante,
+    userId: string,
+  ): Promise<void> {
+    if (!aspirante.rondaEvaluacionId) {
+      throw new ForbiddenException(
+        'Esta ronda no está habilitada para evaluación',
+      );
+    }
+    const ronda = await this.rondaRepository.findOne({
+      where: { id: aspirante.rondaEvaluacionId },
+      select: ['id', 'puedeEvaluar'],
+    });
+    if (!ronda?.puedeEvaluar) {
+      throw new ForbiddenException(
+        'Esta ronda no está habilitada para evaluación',
+      );
+    }
+    const allowed = await this.rondaEvaluadorRepository.find({
+      where: { rondaId: ronda.id },
+      select: ['usuarioId'],
+    });
+    if (allowed.length > 0 && !allowed.some((row) => row.usuarioId === userId)) {
+      throw new ForbiddenException('No tienes permiso para evaluar esta ronda');
+    }
   }
 
   private async isSupervisorOfAssignedEvaluador(

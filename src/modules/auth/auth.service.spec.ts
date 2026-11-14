@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -12,6 +12,8 @@ import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuari
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Hospital } from '../hospital/hospital.entity';
 import { MailService } from '../mail/mail.service';
+import { MSG_ACCESO_FINALIZADO } from '../hospital/tenant-access-window';
+import { GeneroAspirante } from '../../common/enums/genero-aspirante.enum';
 import type { JwtPayloadAspirante } from '../../common/interfaces/jwt-payload.interface';
 import { SolicitarActivacionEstado } from './dto/solicitar-activacion-response.dto';
 import * as bcrypt from 'bcrypt';
@@ -27,6 +29,7 @@ describe('AuthService.issueAspiranteAccessToken', () => {
   };
   const aspiranteRepo = {
     find: jest.fn(),
+    findOne: jest.fn(),
     save: jest.fn(async (entity: unknown) => entity),
   };
   const hospitalRepo = {
@@ -263,6 +266,169 @@ describe('AuthService.issueAspiranteAccessToken', () => {
         expect.objectContaining({ id: 'asp-2', active: false }),
       );
       expect(mailService.sendActivarCuentaEmail).toHaveBeenCalledTimes(1);
+    });
+
+    const past = new Date(Date.now() - 60_000);
+    const future = new Date(Date.now() + 60_000);
+
+    it('allows activation when fecha_cierre is still in the future', async () => {
+      aspiranteRepo.find.mockResolvedValue([
+        {
+          ...later,
+          active: false,
+          rondaEvaluacion: { ...later.rondaEvaluacion, fechaCierre: future },
+        },
+      ]);
+      mailService.sendActivarCuentaEmail.mockResolvedValue(undefined);
+
+      const result = await service.solicitarActivacion({
+        slug: 'hospital-test',
+        email: 'juan@example.com',
+        registroHospital: 'REG-1',
+        rondaEtiqueta: 'Ronda 2027',
+      });
+
+      expect(result.estado).toBe(SolicitarActivacionEstado.ActivacionEnviada);
+      expect(mailService.sendActivarCuentaEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides a closed ronda as no_encontrado', async () => {
+      aspiranteRepo.find.mockResolvedValue([
+        {
+          ...later,
+          active: false,
+          rondaEvaluacion: { ...later.rondaEvaluacion, fechaCierre: past },
+        },
+      ]);
+
+      const result = await service.solicitarActivacion({
+        slug: 'hospital-test',
+        email: 'juan@example.com',
+        registroHospital: 'REG-1',
+      });
+
+      expect(result.estado).toBe(SolicitarActivacionEstado.NoEncontrado);
+      expect(aspiranteRepo.save).not.toHaveBeenCalled();
+      expect(mailService.sendActivarCuentaEmail).not.toHaveBeenCalled();
+    });
+
+    it('activates the open ronda when another ronda is closed', async () => {
+      aspiranteRepo.find.mockResolvedValue([
+        {
+          ...prior,
+          active: false,
+          rondaEvaluacion: { ...prior.rondaEvaluacion, fechaCierre: past },
+        },
+        { ...later, active: false },
+      ]);
+      mailService.sendActivarCuentaEmail.mockResolvedValue(undefined);
+
+      const result = await service.solicitarActivacion({
+        slug: 'hospital-test',
+        email: 'juan@example.com',
+        registroHospital: 'REG-1',
+      });
+
+      expect(result.estado).toBe(SolicitarActivacionEstado.ActivacionEnviada);
+      expect(aspiranteRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'asp-2' }),
+      );
+    });
+
+    it('does not activate a closed ronda even with a valid token', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...prior,
+        primerAccesoToken: 'tok',
+        primerAccesoExpira: future,
+        rondaEvaluacionId: 'ronda-1',
+      });
+      rondaRepo.findOne.mockResolvedValue({
+        id: 'ronda-1',
+        etiqueta: 'Ronda 2026',
+        fechaCierre: past,
+      });
+
+      await expect(
+        service.activarCuenta({
+          token: 'tok',
+          slug: 'hospital-test',
+          registroHospital: 'REG-1',
+          password: 'password1',
+          genero: GeneroAspirante.Hombre,
+          fechaNacimiento: '1995-03-15',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(aspiranteRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('does not activate an account without a ronda', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...prior,
+        primerAccesoToken: 'tok',
+        primerAccesoExpira: future,
+        rondaEvaluacionId: null,
+      });
+
+      await expect(
+        service.activarCuenta({
+          token: 'tok',
+          slug: 'hospital-test',
+          registroHospital: 'REG-1',
+          password: 'password1',
+          genero: GeneroAspirante.Hombre,
+          fechaNacimiento: '1995-03-15',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(aspiranteRepo.save).not.toHaveBeenCalled();
+      expect(rondaRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('logs in an active step-3 account after fecha_cierre', async () => {
+      aspiranteRepo.find.mockResolvedValue([
+        {
+          ...prior,
+          evaluationFlowStep: { orderId: 3, descripcion: 'Pruebas' },
+          rondaEvaluacion: { ...prior.rondaEvaluacion, fechaCierre: past },
+        },
+      ]);
+
+      await service.loginAspirante({
+        slug: 'hospital-test',
+        email: 'juan@example.com',
+        registroHospital: 'REG-1',
+        password: 'secret-a',
+      });
+
+      const payload = jwtService.sign.mock.calls[0][0] as JwtPayloadAspirante;
+      expect(payload.sub).toBe('asp-1');
+    });
+
+    it('rejects login of an active step-2 account after fecha_cierre', async () => {
+      aspiranteRepo.find.mockResolvedValue([
+        {
+          ...prior,
+          evaluationFlowStep: { orderId: 2, descripcion: 'Registrado' },
+          rondaEvaluacion: { ...prior.rondaEvaluacion, fechaCierre: past },
+        },
+      ]);
+
+      await expect(
+        service.loginAspirante({
+          slug: 'hospital-test',
+          email: 'juan@example.com',
+          registroHospital: 'REG-1',
+          password: 'secret-a',
+        }),
+      ).rejects.toEqual(expect.any(ForbiddenException));
+      await expect(
+        service.loginAspirante({
+          slug: 'hospital-test',
+          email: 'juan@example.com',
+          registroHospital: 'REG-1',
+          password: 'secret-a',
+        }),
+      ).rejects.toMatchObject({ message: MSG_ACCESO_FINALIZADO });
+      expect(jwtService.sign).not.toHaveBeenCalled();
     });
   });
 });

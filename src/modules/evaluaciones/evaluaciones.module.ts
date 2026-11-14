@@ -7,6 +7,8 @@ import { Veredicto } from './entities/veredicto.entity';
 import { PruebaAspiranteEvaluacion } from './entities/prueba-aspirante-evaluacion.entity';
 import { AspiranteEvaluacion } from './entities/aspirante-evaluacion.entity';
 import { Aspirante } from '../aspirante/aspirante.entity';
+import { Ronda } from '../aspirante/ronda.entity';
+import { RondaEvaluador } from '../aspirante/ronda-evaluador.entity';
 import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
 import { Prueba } from '../pruebas/entities/prueba.entity';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
@@ -25,6 +27,8 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
       PruebaAspiranteEvaluacion,
       AspiranteEvaluacion,
       Aspirante,
+      Ronda,
+      RondaEvaluador,
       PruebaAspirante,
       Prueba,
       UsuarioAdministrativo,

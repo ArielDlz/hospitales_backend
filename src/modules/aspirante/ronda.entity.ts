@@ -20,6 +20,14 @@ export class Ronda {
   @Column({ type: 'text' })
   etiqueta: string;
 
+  /** Null means the ronda is open. Access closes when now is past this instant. */
+  @Column({ type: 'timestamptz', name: 'fecha_cierre', nullable: true })
+  fechaCierre: Date | null;
+
+  /** False blocks new evaluation claims. True with an empty allow-list means every evaluador. */
+  @Column({ type: 'boolean', name: 'puede_evaluar', default: true })
+  puedeEvaluar: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

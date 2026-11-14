@@ -2,9 +2,12 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Aspirante } from './aspirante.entity';
 import { Ronda } from './ronda.entity';
+import { RondaEvaluador } from './ronda-evaluador.entity';
 import { EvaluationFlowStep } from './evaluation-flow-step.entity';
 import { AspiranteController } from './aspirante.controller';
 import { AspiranteService } from './aspirante.service';
+import { RondaController } from './ronda.controller';
+import { RondaService } from './ronda.service';
 import { AspiranteImportService } from './import/aspirante-import.service';
 import { EvaluationFlowService } from './evaluation-flow.service';
 import { HospitalModule } from '../hospital/hospital.module';
@@ -24,6 +27,7 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
     TypeOrmModule.forFeature([
       Aspirante,
       Ronda,
+      RondaEvaluador,
       EvaluationFlowStep,
       PruebaHospital,
       Prueba,
@@ -37,9 +41,10 @@ import { SuperuserGuard } from '../auth/guards/superuser.guard';
     forwardRef(() => PaymentsModule),
     MailModule,
   ],
-  controllers: [AspiranteController],
+  controllers: [AspiranteController, RondaController],
   providers: [
     AspiranteService,
+    RondaService,
     AspiranteImportService,
     EvaluationFlowService,
     SuperuserGuard,
