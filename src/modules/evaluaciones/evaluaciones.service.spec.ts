@@ -22,6 +22,8 @@ import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuari
 import { Hospital } from '../hospital/hospital.entity';
 import { PruebasService } from '../pruebas/pruebas.service';
 import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
+import { Ronda } from '../aspirante/ronda.entity';
+import { RondaEvaluador } from '../aspirante/ronda-evaluador.entity';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import { ProcesoPrueba } from '../pruebas/entities/prueba-aspirante.entity';
 import * as informeSignerDelegate from './informe-signer-delegate';
@@ -91,6 +93,12 @@ describe('EvaluacionesService', () => {
   };
   const hospitalRepo = {
     findOne: jest.fn(),
+  };
+  const rondaRepo = {
+    findOne: jest.fn(),
+  };
+  const rondaEvaluadorRepo = {
+    find: jest.fn(),
   };
   const nestedInformeKey =
     'informes-firmados/hospital-general/cardiologia/PEGJ880527HDFRRL09_1_A_25_2027.pdf';
@@ -177,6 +185,7 @@ describe('EvaluacionesService', () => {
     genero: 'Hombre',
     fechaNacimiento: '1995-03-15',
     idEvaluadorAsignado: null as string | null,
+    rondaEvaluacionId: 'ronda-1' as string | null,
     evaluationFlowStep: { orderId: 5, descripcion: 'Pruebas completadas' },
   };
 
@@ -193,6 +202,8 @@ describe('EvaluacionesService', () => {
     aspiranteEvaluacionRepo.findOne.mockResolvedValue(null);
     usuarioRepo.findOne.mockResolvedValue({ email: 'evaluador-a@hospital.com' });
     usuarioRepo.find.mockResolvedValue([]);
+    rondaRepo.findOne.mockResolvedValue({ id: 'ronda-1', puedeEvaluar: true });
+    rondaEvaluadorRepo.find.mockResolvedValue([]);
     googleDriveService.getEnabledTenantIds.mockReturnValue([
       '72ec5b8b-75e9-4956-b17d-85c946856a2d',
     ]);
@@ -217,6 +228,11 @@ describe('EvaluacionesService', () => {
           useValue: usuarioRepo,
         },
         { provide: getRepositoryToken(Hospital), useValue: hospitalRepo },
+        { provide: getRepositoryToken(Ronda), useValue: rondaRepo },
+        {
+          provide: getRepositoryToken(RondaEvaluador),
+          useValue: rondaEvaluadorRepo,
+        },
         { provide: PruebasService, useValue: pruebasService },
         { provide: EvaluationFlowService, useValue: evaluationFlowService },
         { provide: DataSource, useValue: dataSource },
@@ -308,6 +324,70 @@ describe('EvaluacionesService', () => {
       expect(result.message).toBe('Acceso de solo lectura');
       expect(aspiranteRepo.update).not.toHaveBeenCalled();
       expect(evaluationFlowService.advanceOneStepIfAt).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un claim nuevo si la ronda está cerrada, no existe o el evaluador no está habilitado', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({
+        ...aspiranteStep5,
+        rondaEvaluacionId: null,
+      });
+      await expect(
+        service.asignarEvaluacion(aspiranteId, evaluadorA),
+      ).rejects.toThrow(ForbiddenException);
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+
+      aspiranteRepo.update.mockClear();
+      aspiranteRepo.findOne.mockResolvedValue({ ...aspiranteStep5 });
+      rondaRepo.findOne.mockResolvedValue({ id: 'ronda-1', puedeEvaluar: false });
+      await expect(
+        service.asignarEvaluacion(aspiranteId, evaluadorA),
+      ).rejects.toThrow(ForbiddenException);
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+
+      aspiranteRepo.update.mockClear();
+      rondaRepo.findOne.mockResolvedValue({ id: 'ronda-1', puedeEvaluar: true });
+      rondaEvaluadorRepo.find.mockResolvedValue([{ usuarioId: 'eval-uuid-otro' }]);
+      await expect(
+        service.asignarEvaluacion(aspiranteId, evaluadorA),
+      ).rejects.toThrow('No tienes permiso para evaluar esta ronda');
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('deja continuar al evaluador ya asignado aunque la ronda esté cerrada', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({ ...aspiranteStep6AssignedA });
+      rondaRepo.findOne.mockResolvedValue({ id: 'ronda-1', puedeEvaluar: false });
+
+      const result = await service.asignarEvaluacion(aspiranteId, evaluadorA);
+
+      expect(result.readOnly).toBe(false);
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+      expect(rondaRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('deja al supervisor en solo lectura aunque no esté en la lista', async () => {
+      aspiranteRepo.findOne.mockResolvedValue({ ...aspiranteStep6AssignedA });
+      rondaRepo.findOne.mockResolvedValue({ id: 'ronda-1', puedeEvaluar: false });
+      rondaEvaluadorRepo.find.mockResolvedValue([{ usuarioId: 'eval-uuid-otro' }]);
+      usuarioRepo.findOne.mockImplementation(
+        async (opts: { where: { id: string }; select?: string[] }) => {
+          if (
+            opts.where.id === evaluadorAId &&
+            opts.select?.includes('supervisorId')
+          ) {
+            return { supervisorId };
+          }
+          if (opts.where.id === evaluadorAId) {
+            return { email: 'evaluador-a@hospital.com' };
+          }
+          return null;
+        },
+      );
+
+      const result = await service.asignarEvaluacion(aspiranteId, supervisorUser);
+
+      expect(result.readOnly).toBe(true);
+      expect(aspiranteRepo.update).not.toHaveBeenCalled();
+      expect(rondaRepo.findOne).not.toHaveBeenCalled();
     });
   });
 

@@ -27,6 +27,7 @@ import { PruebaAspirante } from '../pruebas/entities/prueba-aspirante.entity';
 import { AspiranteEvaluacion } from '../evaluaciones/entities/aspirante-evaluacion.entity';
 import { Veredicto } from '../evaluaciones/entities/veredicto.entity';
 import { EvaluationFlowService } from './evaluation-flow.service';
+import { RondaEvaluador } from './ronda-evaluador.entity';
 import { buildEnviarAlHospitalFlags } from '../google-drive/enviar-al-hospital.flags';
 import { parseEnabledTenantIds } from '../google-drive/google-drive-tenants';
 type AspirantePublic = Omit<
@@ -49,6 +50,8 @@ type AspiranteWithHospitalName = AspirantePublic & {
   enviadoAlHospital: boolean;
   veredicto: VeredictoListItem | null;
   rondaEtiqueta: string | null;
+  isRondaEnabled: boolean;
+  evaluadoresEnabled: string[];
 };
 
 @Injectable()
@@ -66,6 +69,8 @@ export class AspiranteService {
     private readonly aspiranteEvaluacionRepository: Repository<AspiranteEvaluacion>,
     @InjectRepository(Veredicto)
     private readonly veredictoRepository: Repository<Veredicto>,
+    @InjectRepository(RondaEvaluador)
+    private readonly rondaEvaluadorRepository: Repository<RondaEvaluador>,
     private readonly hospitalService: HospitalService,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
@@ -437,6 +442,7 @@ export class AspiranteService {
 
     const evaluadorEmailById = await this.loadEvaluadorEmailsById(rows);
     const veredictoByAspiranteId = await this.loadVeredictoByAspiranteId(rows);
+    const evaluadoresByRonda = await this.loadEvaluadoresByRonda(rows);
 
     return rows.map((row) =>
       this.toPublicListItem(
@@ -447,6 +453,7 @@ export class AspiranteService {
           : null,
         user,
         veredictoByAspiranteId.get(row.id) ?? null,
+        evaluadoresByRonda,
       ),
     );
   }
@@ -525,6 +532,7 @@ export class AspiranteService {
 
     const evaluadorEmailById = await this.loadEvaluadorEmailsById(rows);
     const veredictoByAspiranteId = await this.loadVeredictoByAspiranteId(rows);
+    const evaluadoresByRonda = await this.loadEvaluadoresByRonda(rows);
 
     return rows.map((row) =>
       this.toPublicListItem(
@@ -535,6 +543,7 @@ export class AspiranteService {
           : null,
         user,
         veredictoByAspiranteId.get(row.id) ?? null,
+        evaluadoresByRonda,
       ),
     );
   }
@@ -601,12 +610,39 @@ export class AspiranteService {
     return result;
   }
 
+  private async loadEvaluadoresByRonda(
+    rows: Aspirante[],
+  ): Promise<Map<string, string[]>> {
+    const rondaIds = [
+      ...new Set(
+        rows
+          .map((row) => row.rondaEvaluacionId)
+          .filter((id): id is string => id != null),
+      ),
+    ];
+    const result = new Map<string, string[]>();
+    if (rondaIds.length === 0) {
+      return result;
+    }
+    const links = await this.rondaEvaluadorRepository.find({
+      where: { rondaId: In(rondaIds) },
+      select: ['rondaId', 'usuarioId'],
+    });
+    for (const link of links) {
+      const current = result.get(link.rondaId) ?? [];
+      current.push(link.usuarioId);
+      result.set(link.rondaId, current);
+    }
+    return result;
+  }
+
   private toPublicListItem(
     row: Aspirante,
     hospitalNombre: string | null,
     evaluadorAsignadoEmail: string | null,
     user: JwtPayloadAdmin,
     veredicto: VeredictoListItem | null,
+    evaluadoresByRonda: Map<string, string[]>,
   ): AspiranteWithHospitalName {
     const {
       passwordHash: _,
@@ -626,6 +662,11 @@ export class AspiranteService {
       evaluadorAsignadoEmail,
       veredicto,
       rondaEtiqueta: row.rondaEvaluacionId ? (rondaEvaluacion?.etiqueta ?? null) : null,
+      isRondaEnabled:
+        row.rondaEvaluacionId != null && rondaEvaluacion?.puedeEvaluar === true,
+      evaluadoresEnabled: row.rondaEvaluacionId
+        ? (evaluadoresByRonda.get(row.rondaEvaluacionId) ?? [])
+        : [],
       ...buildEnviarAlHospitalFlags(
         row,
         user.rol,

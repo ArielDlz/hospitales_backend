@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -21,7 +22,12 @@ import { EvaluationFlowService } from '../aspirante/evaluation-flow.service';
 import { UsuarioAdministrativo } from '../usuario-administrativo/entities/usuario-administrativo.entity';
 import { EvaluadorTenant } from '../usuario-administrativo/entities/evaluador-tenant.entity';
 import { Hospital } from '../hospital/hospital.entity';
-import { resolveAspiranteJwtExpiresIn } from '../hospital/tenant-access-window';
+import {
+  MIN_FLOW_ORDER_AFTER_CLOSE,
+  MSG_ACCESO_FINALIZADO,
+  resolveAspiranteJwtExpiresIn,
+} from '../hospital/tenant-access-window';
+import { isRondaClosed } from '../aspirante/ronda-access';
 import { MailService } from '../mail/mail.service';
 import { RolUsuarioAdmin } from '../../common/enums/rol-usuario-admin.enum';
 import {
@@ -266,16 +272,33 @@ export class AuthService {
       }
     }
 
-    const allowed = passwordMatches.filter((candidate) => candidate.rondaEvaluacionId);
-    if (allowed.length === 1) {
-      return allowed[0];
+    const withRonda = passwordMatches.filter((candidate) => candidate.rondaEvaluacionId);
+    if (withRonda.length === 0) {
+      throw new UnauthorizedException(CREDENTIALS_ERROR);
     }
 
-    throw new UnauthorizedException(
-      allowed.length > 1
-        ? 'Hay más de una cuenta activa con estos datos. Indica la ronda de evaluación.'
-        : CREDENTIALS_ERROR,
+    const selectable = withRonda.filter((candidate) =>
+      this.isSelectableForLogin(candidate),
     );
+    if (selectable.length === 1) {
+      return selectable[0];
+    }
+    if (selectable.length > 1) {
+      throw new UnauthorizedException(
+        'Hay más de una cuenta activa con estos datos. Indica la ronda de evaluación.',
+      );
+    }
+
+    throw new ForbiddenException(MSG_ACCESO_FINALIZADO);
+  }
+
+  /** Open rondas are selectable. A closed ronda is selectable only from flow step 3. */
+  private isSelectableForLogin(aspirante: Aspirante): boolean {
+    if (!isRondaClosed(aspirante.rondaEvaluacion?.fechaCierre)) {
+      return true;
+    }
+    const orderId = aspirante.evaluationFlowStep?.orderId ?? 0;
+    return orderId >= MIN_FLOW_ORDER_AFTER_CLOSE;
   }
 
   private async findAspirantesByIdentidad(params: {
@@ -307,6 +330,17 @@ export class AuthService {
     return rows.filter(
       (row) => row.rondaEvaluacion?.etiqueta.trim().toLowerCase() === etiqueta,
     );
+  }
+
+  private async isActivacionPermitida(aspirante: Aspirante): Promise<boolean> {
+    if (!aspirante.rondaEvaluacionId) {
+      return false;
+    }
+    const ronda = await this.rondaRepository.findOne({
+      where: { id: aspirante.rondaEvaluacionId },
+      select: ['id', 'fechaCierre'],
+    });
+    return ronda != null && !isRondaClosed(ronda.fechaCierre);
   }
 
   private async resolveRondaEtiqueta(
@@ -345,8 +379,13 @@ export class AuthService {
       registroHospital,
       rondaEtiqueta: dto.rondaEtiqueta,
     });
+    const openMatches = matches.filter(
+      (row) =>
+        row.rondaEvaluacionId != null &&
+        !isRondaClosed(row.rondaEvaluacion?.fechaCierre),
+    );
 
-    if (matches.length > 1) {
+    if (openMatches.length > 1) {
       return {
         estado: SolicitarActivacionEstado.RondaRequerida,
         mensaje:
@@ -354,7 +393,7 @@ export class AuthService {
       };
     }
 
-    const aspirante = matches[0];
+    const aspirante = openMatches[0];
 
     if (!aspirante) {
       return {
@@ -644,6 +683,15 @@ export class AuthService {
         withReqId(
           `[activarCuenta] Rechazado: registroHospital no coincide - ` +
             `${formatAspiranteLog(aspirante)} registroRecibido=${dto.registroHospital.trim()}`,
+        ),
+      );
+      throw new BadRequestException(ACTIVACION_ERROR);
+    }
+
+    if (!(await this.isActivacionPermitida(aspirante))) {
+      this.logger.warn(
+        withReqId(
+          `[activarCuenta] Rechazado: ronda cerrada o sin ronda - ${formatAspiranteLog(aspirante)}`,
         ),
       );
       throw new BadRequestException(ACTIVACION_ERROR);

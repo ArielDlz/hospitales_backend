@@ -82,6 +82,21 @@ export class AspiranteResponseDto {
   })
   rondaEtiqueta: string | null;
 
+  @ApiProperty({
+    example: true,
+    description:
+      'true si el aspirante tiene ronda y rondas.puede_evaluar es true. false si no tiene ronda o la evaluación de esa ronda está cerrada.',
+  })
+  isRondaEnabled: boolean;
+
+  @ApiProperty({
+    type: [String],
+    example: ['550e8400-e29b-41d4-a716-446655440000'],
+    description:
+      'UUIDs de usuarios_administrativos que pueden evaluar la ronda. Vacío si cualquiera puede, o si el aspirante no tiene ronda. Se devuelve aunque puede_evaluar sea false.',
+  })
+  evaluadoresEnabled: string[];
+
   @ApiProperty({ example: 'García' })
   apellidos: string;
 
