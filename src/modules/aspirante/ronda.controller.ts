@@ -15,7 +15,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
+import type { JwtPayloadAdmin } from '../../common/interfaces/jwt-payload.interface';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
