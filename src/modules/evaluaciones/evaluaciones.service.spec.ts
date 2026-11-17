@@ -101,7 +101,7 @@ describe('EvaluacionesService', () => {
     find: jest.fn(),
   };
   const nestedInformeKey =
-    'informes-firmados/hospital-general/cardiologia/PEGJ880527HDFRRL09_1_A_25_2027.pdf';
+    'informes-firmados/hospital-general/cardiologia/asp-uuid-1/PEGJ880527HDFRRL09_1_A_25_2027.pdf';
   const nestedInformeUrl = `https://bucket.s3.amazonaws.com/${nestedInformeKey}`;
   const s3Storage = {
     uploadBuffer: jest.fn().mockResolvedValue({
@@ -1219,7 +1219,7 @@ describe('EvaluacionesService', () => {
 
     it('conserva el nombre del objeto en S3, incluido un informe extendido', async () => {
       const extendidoUrl =
-        'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf';
+        'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/asp-uuid-1/PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf';
       aspiranteRepo.findOne.mockResolvedValue({
         ...signedAspirante,
         veredictoInforme: extendidoUrl,
@@ -1394,7 +1394,7 @@ describe('EvaluacionesService', () => {
         expect.objectContaining({
           contentType: 'application/pdf',
           key: expect.stringMatching(
-            /^informes-firmados\/hospital-general\/cardiologia\/PEGJ880527HDFRRL09_1_A_25_2027_extendido_\d{8}T\d{6}\.pdf$/,
+            /^informes-firmados\/hospital-general\/cardiologia\/asp-uuid-1\/PEGJ880527HDFRRL09_1_A_25_2027_extendido_\d{8}T\d{6}\.pdf$/,
           ),
         }),
       );

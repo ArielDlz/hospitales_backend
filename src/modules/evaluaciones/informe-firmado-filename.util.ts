@@ -19,16 +19,24 @@ export function slugifyPathSegment(value: string): string {
 
 /**
  * S3 key for signed informes:
- * `informes-firmados/{hospitalSlug}/{especialidadSlug}/{filename}`
+ * `informes-firmados/{hospitalSlug}/{especialidadSlug}/{aspiranteId}/{filename}`
+ *
+ * The aspirante id keeps one object per row. The same CURP in another ronda
+ * must not overwrite the previous informe.
  */
 export function buildInformeFirmadoS3Key(params: {
   slug: string;
   especialidad?: string | null;
+  aspiranteId: string;
   filename: string;
 }): string {
   const especialidadSegment =
     slugifyPathSegment(params.especialidad ?? '') || 'sin-especialidad';
-  return `informes-firmados/${params.slug}/${especialidadSegment}/${params.filename}`;
+  const aspiranteSegment = sanitizeFilenamePart(params.aspiranteId);
+  if (!aspiranteSegment) {
+    throw new Error('aspiranteId is required for the signed informe key');
+  }
+  return `informes-firmados/${params.slug}/${especialidadSegment}/${aspiranteSegment}/${params.filename}`;
 }
 
 /** A = Aceptado (incluye con reservas); N = No aceptado. */
