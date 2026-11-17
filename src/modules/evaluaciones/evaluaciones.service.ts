@@ -465,6 +465,7 @@ export class EvaluacionesService {
     const key = buildInformeFirmadoS3Key({
       slug: hospital.slug,
       especialidad: aspirante.especialidad,
+      aspiranteId,
       filename,
     });
     const uploaded = await this.s3Storage.uploadBuffer({
@@ -545,6 +546,7 @@ export class EvaluacionesService {
     const key = buildInformeFirmadoS3Key({
       slug: hospital.slug,
       especialidad: aspirante.especialidad,
+      aspiranteId,
       filename,
     });
     const uploaded = await this.s3Storage.uploadBuffer({

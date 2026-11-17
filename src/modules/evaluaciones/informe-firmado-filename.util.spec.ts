@@ -28,7 +28,7 @@ describe('informe-firmado-filename.util', () => {
     it('toma el nombre del objeto en S3', () => {
       expect(
         filenameFromInformeUrl(
-          'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+          'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/asp-uuid-1/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
         ),
       ).toBe('PEGJ880527HDFRRL09_1_A_25_2027.pdf');
     });
@@ -78,16 +78,18 @@ describe('informe-firmado-filename.util', () => {
 
   describe('buildInformeFirmadoS3Key', () => {
     const filename = 'PEGJ880527HDFRRL09_1_A_25_2027.pdf';
+    const aspiranteId = 'asp-uuid-1';
 
-    it('arma informes-firmados/{slug}/{especialidad}/{filename}', () => {
+    it('arma informes-firmados/{slug}/{especialidad}/{aspiranteId}/{filename}', () => {
       expect(
         buildInformeFirmadoS3Key({
           slug: 'hospital-general',
           especialidad: 'Medicina Interna',
+          aspiranteId,
           filename,
         }),
       ).toBe(
-        `informes-firmados/hospital-general/medicina-interna/${filename}`,
+        `informes-firmados/hospital-general/medicina-interna/${aspiranteId}/${filename}`,
       );
     });
 
@@ -96,20 +98,49 @@ describe('informe-firmado-filename.util', () => {
         buildInformeFirmadoS3Key({
           slug: 'hospital-general',
           especialidad: null,
+          aspiranteId,
           filename,
         }),
       ).toBe(
-        `informes-firmados/hospital-general/sin-especialidad/${filename}`,
+        `informes-firmados/hospital-general/sin-especialidad/${aspiranteId}/${filename}`,
       );
       expect(
         buildInformeFirmadoS3Key({
           slug: 'hospital-general',
           especialidad: '   ',
+          aspiranteId,
           filename,
         }),
       ).toBe(
-        `informes-firmados/hospital-general/sin-especialidad/${filename}`,
+        `informes-firmados/hospital-general/sin-especialidad/${aspiranteId}/${filename}`,
       );
+    });
+
+    it('separa dos aspirantes con el mismo CURP', () => {
+      const first = buildInformeFirmadoS3Key({
+        slug: 'hospital-general',
+        especialidad: 'Cardiología',
+        aspiranteId: 'asp-ronda-1',
+        filename,
+      });
+      const second = buildInformeFirmadoS3Key({
+        slug: 'hospital-general',
+        especialidad: 'Cardiología',
+        aspiranteId: 'asp-ronda-2',
+        filename,
+      });
+      expect(first).not.toBe(second);
+    });
+
+    it('rechaza un aspiranteId vacío', () => {
+      expect(() =>
+        buildInformeFirmadoS3Key({
+          slug: 'hospital-general',
+          especialidad: 'Cardiología',
+          aspiranteId: '   ',
+          filename,
+        }),
+      ).toThrow('aspiranteId is required for the signed informe key');
     });
   });
 });
