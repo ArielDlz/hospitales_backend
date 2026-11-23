@@ -61,7 +61,7 @@ export function formatInformeExtendidoTimestamp(at: Date): string {
 
 /**
  * Rebuilt signed informe, distinct from the original key:
- * `{CURP}_1_{A|N}_25_2027_extendido_{yyyyMMddTHHmmss}.pdf`
+ * `{CURP}_2_{A|N}_25_2027_extendido_{yyyyMMddTHHmmss}.pdf`
  */
 export function buildInformeExtendidoFilename(
   documento: string | null | undefined,
@@ -79,7 +79,7 @@ export function buildInformeExtendidoFilename(
 
 /**
  * Signed informe S3 filename:
- * `{CURP}_1_{veredicto_inicial}_25_2027.pdf`
+ * `{CURP}_2_{veredicto_inicial}_25_2027.pdf`
  * CURP from aspirante.documento; veredicto_inicial is A or N.
  */
 export function buildInformeFirmadoFilename(
@@ -89,7 +89,7 @@ export function buildInformeFirmadoFilename(
 ): string {
   const curp = sanitizeFilenamePart(documento ?? '');
   const inicial = resolveVeredictoInicial(veredictoCodigo, veredictoEtiqueta);
-  return `${curp}_1_${inicial}_25_2027.pdf`;
+  return `${curp}_2_${inicial}_25_2027.pdf`;
 }
 
 export function filenameFromInformeUrl(url: string): string {
