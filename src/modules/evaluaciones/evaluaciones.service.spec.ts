@@ -101,7 +101,7 @@ describe('EvaluacionesService', () => {
     find: jest.fn(),
   };
   const nestedInformeKey =
-    'informes-firmados/hospital-general/cardiologia/asp-uuid-1/PEGJ880527HDFRRL09_1_A_25_2027.pdf';
+    'informes-firmados/hospital-general/cardiologia/asp-uuid-1/PEGJ880527HDFRRL09_2_A_25_2027.pdf';
   const nestedInformeUrl = `https://bucket.s3.amazonaws.com/${nestedInformeKey}`;
   const s3Storage = {
     uploadBuffer: jest.fn().mockResolvedValue({
@@ -1038,7 +1038,7 @@ describe('EvaluacionesService', () => {
     const aspiranteStep10 = {
       ...aspiranteStep6AssignedA,
       veredictoInforme:
-        'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+        'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_2_A_25_2027.pdf',
       evaluationFlowStep: { orderId: 10, descripcion: 'Informe firmado' },
     };
     const originalFetch = global.fetch;
@@ -1076,7 +1076,7 @@ describe('EvaluacionesService', () => {
 
       expect(global.fetch).toHaveBeenCalledWith(aspiranteStep10.veredictoInforme);
       expect(result.buffer.toString()).toContain('%PDF');
-      expect(result.filename).toBe('PEGJ880527HDFRRL09_1_A_25_2027.pdf');
+      expect(result.filename).toBe('PEGJ880527HDFRRL09_2_A_25_2027.pdf');
     });
 
     it('usa el nombre del URL si el aspirante no tiene documento (CURP)', async () => {
@@ -1201,7 +1201,7 @@ describe('EvaluacionesService', () => {
         hospitalNombre: 'hospital-general',
         modalidad: 'presencial',
         especialidad: 'cardiologia',
-        filename: 'PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+        filename: 'PEGJ880527HDFRRL09_2_A_25_2027.pdf',
         buffer: expect.any(Buffer),
       });
       expect(aspiranteRepo.update).toHaveBeenCalledWith(
@@ -1219,7 +1219,7 @@ describe('EvaluacionesService', () => {
 
     it('conserva el nombre del objeto en S3, incluido un informe extendido', async () => {
       const extendidoUrl =
-        'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/asp-uuid-1/PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf';
+        'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/asp-uuid-1/PEGJ880527HDFRRL09_2_A_25_2027_extendido_20260926T201500.pdf';
       aspiranteRepo.findOne.mockResolvedValue({
         ...signedAspirante,
         veredictoInforme: extendidoUrl,
@@ -1231,7 +1231,7 @@ describe('EvaluacionesService', () => {
       expect(googleDriveService.uploadSignedInforme).toHaveBeenCalledWith(
         expect.objectContaining({
           filename:
-            'PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf',
+            'PEGJ880527HDFRRL09_2_A_25_2027_extendido_20260926T201500.pdf',
         }),
       );
     });
@@ -1394,7 +1394,7 @@ describe('EvaluacionesService', () => {
         expect.objectContaining({
           contentType: 'application/pdf',
           key: expect.stringMatching(
-            /^informes-firmados\/hospital-general\/cardiologia\/asp-uuid-1\/PEGJ880527HDFRRL09_1_A_25_2027_extendido_\d{8}T\d{6}\.pdf$/,
+            /^informes-firmados\/hospital-general\/cardiologia\/asp-uuid-1\/PEGJ880527HDFRRL09_2_A_25_2027_extendido_\d{8}T\d{6}\.pdf$/,
           ),
         }),
       );

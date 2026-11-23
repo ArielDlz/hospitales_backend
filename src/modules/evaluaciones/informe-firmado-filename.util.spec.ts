@@ -28,28 +28,28 @@ describe('informe-firmado-filename.util', () => {
     it('toma el nombre del objeto en S3', () => {
       expect(
         filenameFromInformeUrl(
-          'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/asp-uuid-1/PEGJ880527HDFRRL09_1_A_25_2027.pdf',
+          'https://bucket.s3.amazonaws.com/informes-firmados/hospital-general/cardiologia/asp-uuid-1/PEGJ880527HDFRRL09_2_A_25_2027.pdf',
         ),
-      ).toBe('PEGJ880527HDFRRL09_1_A_25_2027.pdf');
+      ).toBe('PEGJ880527HDFRRL09_2_A_25_2027.pdf');
     });
 
     it('conserva el nombre de un informe extendido', () => {
       expect(
         filenameFromInformeUrl(
-          'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf',
+          'https://bucket.s3.amazonaws.com/informes-firmados/PEGJ880527HDFRRL09_2_A_25_2027_extendido_20260926T201500.pdf',
         ),
-      ).toBe('PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf');
+      ).toBe('PEGJ880527HDFRRL09_2_A_25_2027_extendido_20260926T201500.pdf');
     });
   });
 
   describe('buildInformeFirmadoFilename', () => {
-    it('arma CURP_1_{A|N}_25_2027.pdf', () => {
+    it('arma CURP_2_{A|N}_25_2027.pdf', () => {
       expect(
         buildInformeFirmadoFilename('PEGJ880527HDFRRL09', 'aceptado', 'Aceptado'),
-      ).toBe('PEGJ880527HDFRRL09_1_A_25_2027.pdf');
+      ).toBe('PEGJ880527HDFRRL09_2_A_25_2027.pdf');
       expect(
         buildInformeFirmadoFilename('PEGJ880527HDFRRL09', 'no_aceptado', 'No Aceptado'),
-      ).toBe('PEGJ880527HDFRRL09_1_N_25_2027.pdf');
+      ).toBe('PEGJ880527HDFRRL09_2_N_25_2027.pdf');
     });
   });
 
@@ -62,7 +62,7 @@ describe('informe-firmado-filename.util', () => {
           'Aceptado',
           new Date('2026-09-26T20:15:00.000Z'),
         ),
-      ).toBe('PEGJ880527HDFRRL09_1_A_25_2027_extendido_20260926T201500.pdf');
+      ).toBe('PEGJ880527HDFRRL09_2_A_25_2027_extendido_20260926T201500.pdf');
     });
   });
 
@@ -77,7 +77,7 @@ describe('informe-firmado-filename.util', () => {
   });
 
   describe('buildInformeFirmadoS3Key', () => {
-    const filename = 'PEGJ880527HDFRRL09_1_A_25_2027.pdf';
+    const filename = 'PEGJ880527HDFRRL09_2_A_25_2027.pdf';
     const aspiranteId = 'asp-uuid-1';
 
     it('arma informes-firmados/{slug}/{especialidad}/{aspiranteId}/{filename}', () => {
